@@ -10,6 +10,9 @@ const {
 const { analyzeFlame } = require('./flamescore.js');
 const fetch = require('node-fetch');
 
+// 👇 Replace this with your actual channel ID
+const ALLOWED_CHANNEL_ID = process.env.CHANNEL_ID;
+
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -25,7 +28,12 @@ client.once('ready', () => {
 });
 
 client.on('messageCreate', async (message) => {
-  if (message.author.bot || !message.attachments.size) return;
+  // Restrict to one specific channel
+  if (
+    message.author.bot ||
+    !message.attachments.size ||
+    message.channel.id !== ALLOWED_CHANNEL_ID
+  ) return;
 
   const imageAttachment = message.attachments.first();
   const imageBuffer = await fetch(imageAttachment.url)
@@ -48,6 +56,7 @@ client.on('messageCreate', async (message) => {
     components: [mainStatRow]
   });
 
+  // Auto-delete message + prompt after 60s
   setTimeout(() => {
     message.delete().catch(() => {});
     reply.delete().catch(() => {});
@@ -57,8 +66,12 @@ client.on('messageCreate', async (message) => {
 client.on(Events.InteractionCreate, async interaction => {
   if (!interaction.isButton()) return;
 
+  // Restrict button interaction to same channel
+  if (interaction.channelId !== ALLOWED_CHANNEL_ID) return;
+
   const [type, main, sub] = interaction.customId.split('_');
 
+  // Main stat button → prompt secondary
   if (type === 'main') {
     const secondaryStatRow = new ActionRowBuilder().addComponents(
       ['STR', 'DEX', 'INT', 'LUK'].map(stat =>
@@ -76,6 +89,7 @@ client.on(Events.InteractionCreate, async interaction => {
     });
   }
 
+  // Secondary stat button → analyze
   if (type === 'secondary') {
     const mainStat = main;
     const subStat = sub;
@@ -91,20 +105,16 @@ client.on(Events.InteractionCreate, async interaction => {
     await interaction.deferReply({ ephemeral: false });
 
     const result = await analyzeFlame(imageBuffer, mainStat, subStat);
-
     const s = result.stats;
-    const useMagic = result.useMagic;
 
-    // Flame Stats Block
     const statLine = [
       `Main Stat: ${s[mainStat] || 0}`,
       `Sub Stat: ${s[subStat] || 0}`,
-      useMagic ? `MATT: ${s.magic || 0}` : `ATK: ${s.attack || 0}`,
-      `All Stat%: ${s.allStatPercent || 0}`,
+      result.useMagic ? `MATT: ${s.magic || 0}` : `ATK: ${s.attack || 0}`,
+      `All Stat%: ${s.allStatPercent || 0}`
     ];
     if (s.boss) statLine.push(`Boss: ${s.boss}%`);
 
-    // Flame Tier Block
     const tierLine = result.tiers.join(', ');
 
     const reply = await interaction.editReply({

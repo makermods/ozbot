@@ -22,8 +22,8 @@ function getTier(value, table) {
 async function isEnhanced(imageBuffer) {
   const image = await Jimp.read(imageBuffer);
 
-  // ✅ Corrected crop area to capture the star row at the top
-  const starRegion = image.clone().crop(10, 10, 350, 50);
+  // ✅ Full-width crop along top to capture yellow/gray stars
+  const starRegion = image.clone().crop(10, 0, image.bitmap.width - 20, 55);
 
   let yellowStars = 0;
   let greyStars = 0;
@@ -43,8 +43,8 @@ async function isEnhanced(imageBuffer) {
 async function extractStats(imageBuffer) {
   const image = await Jimp.read(imageBuffer);
 
-  // ✅ Cropped higher and larger to include stat labels like STR, DEX
-  const cropped = image.clone().crop(50, 240, image.bitmap.width - 100, 220);
+  // ✅ Wider and taller crop to capture stat names + values fully
+  const cropped = image.clone().crop(30, 230, image.bitmap.width - 60, 280);
 
   cropped
     .grayscale()
@@ -137,18 +137,3 @@ async function analyzeFlame(imageBuffer, mainStat, subStat) {
 
   const flameScore = calculateFlameScore(stats, mainStat, subStat, useMagic);
   const tierBreakdown = getStatTierBreakdown(stats, mainStat, subStat, useMagic);
-
-  return {
-    enhanced,
-    flameScore,
-    useMagic,
-    stats,
-    tiers: tierBreakdown,
-    mainStat,
-    subStat
-  };
-}
-
-module.exports = {
-  analyzeFlame
-};

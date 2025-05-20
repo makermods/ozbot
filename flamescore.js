@@ -1,5 +1,5 @@
 const Tesseract = require('tesseract.js');
-const Jimp = require('jimp');
+const Jimp = require('jimp').default;
 
 // Typical flame tier values for level 160+ gear
 const FLAME_TIERS = {

@@ -137,3 +137,18 @@ async function analyzeFlame(imageBuffer, mainStat, subStat) {
 
   const flameScore = calculateFlameScore(stats, mainStat, subStat, useMagic);
   const tierBreakdown = getStatTierBreakdown(stats, mainStat, subStat, useMagic);
+
+  return {
+    enhanced,
+    flameScore,
+    useMagic,
+    stats,
+    tiers: tierBreakdown,
+    mainStat,
+    subStat
+  };
+}
+
+module.exports = {
+  analyzeFlame
+};

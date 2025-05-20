@@ -1,5 +1,4 @@
 const Tesseract = require('tesseract.js');
-const Jimp = require('jimp');
 
 const FLAME_TIERS = {
   stat: [4, 8, 12, 16, 20, 24, 28],
@@ -19,44 +18,8 @@ function getTier(value, table) {
   return 0;
 }
 
-async function isEnhanced(imageBuffer) {
-  const image = await Jimp.read(imageBuffer);
-
-  // ✅ Capture full star bar at top
-  const starRegion = image.clone().crop(10, 0, image.bitmap.width - 20, 55);
-
-  let yellowStars = 0;
-  let greyStars = 0;
-
-  starRegion.scan(0, 0, starRegion.bitmap.width, starRegion.bitmap.height, function (x, y, idx) {
-    const red = this.bitmap.data[idx];
-    const green = this.bitmap.data[idx + 1];
-    const blue = this.bitmap.data[idx + 2];
-
-    if (red > 200 && green > 200 && blue < 100) yellowStars++;
-    else if (red < 150 && green < 150 && blue < 150) greyStars++;
-  });
-
-  return yellowStars > greyStars;
-}
-
-async function extractStats(imageBuffer) {
-  const image = await Jimp.read(imageBuffer);
-
-  // ✅ Wider + taller crop to include stat labels and values
-  const cropped = image.clone().crop(10, 230, image.bitmap.width - 40, 280);
-
-  cropped
-    .grayscale()
-    .contrast(1)
-    .normalize()
-    .brightness(0.1)
-    .blur(1)
-    .resize(cropped.bitmap.width * 2, cropped.bitmap.height * 2);
-
-  const processedBuffer = await cropped.getBufferAsync(Jimp.MIME_PNG);
-
-  const { data: { text } } = await Tesseract.recognize(processedBuffer, 'eng', {
+async function extractStats(imageBuffer, starforced) {
+  const { data: { text } } = await Tesseract.recognize(imageBuffer, 'eng', {
     tessedit_char_whitelist: '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ:+% ',
   });
 
@@ -74,27 +37,27 @@ async function extractStats(imageBuffer) {
 
   const lines = text.split('\n');
 
+  const extractFlame = (line) => {
+    const values = line.match(/\d+/g)?.map(Number);
+    if (!values) return 0;
+    if (starforced && values.length === 3) return values[1]; // middle = flame
+    if (!starforced && values.length === 2) return values[1]; // second = flame
+    return 0;
+  };
+
   for (let line of lines) {
     line = line.trim();
 
-    if (/STR[: ]?\+?(\d+)/i.test(line)) result.stats.STR = parseInt(line.match(/STR[: ]?\+?(\d+)/i)[1]);
-    if (/DEX[: ]?\+?(\d+)/i.test(line)) result.stats.DEX = parseInt(line.match(/DEX[: ]?\+?(\d+)/i)[1]);
-    if (/INT[: ]?\+?(\d+)/i.test(line)) result.stats.INT = parseInt(line.match(/INT[: ]?\+?(\d+)/i)[1]);
-    if (/LUK[: ]?\+?(\d+)/i.test(line)) result.stats.LUK = parseInt(line.match(/LUK[: ]?\+?(\d+)/i)[1]);
-    if (/HP[: ]?\+?(\d+)/i.test(line)) result.stats.HP = parseInt(line.match(/HP[: ]?\+?(\d+)/i)[1]);
+    if (/STR[: ]?\+?/i.test(line)) result.stats.STR = extractFlame(line);
+    if (/DEX[: ]?\+?/i.test(line)) result.stats.DEX = extractFlame(line);
+    if (/INT[: ]?\+?/i.test(line)) result.stats.INT = extractFlame(line);
+    if (/LUK[: ]?\+?/i.test(line)) result.stats.LUK = extractFlame(line);
+    if (/HP[: ]?\+?/i.test(line)) result.stats.HP = extractFlame(line);
+    if (/Attack Power|ower/i.test(line)) result.stats.attack = extractFlame(line);
+    if (/Magic Attack/i.test(line)) result.stats.magic = extractFlame(line);
+    if (/All Stats?:?\s*\+?\d+%/i.test(line)) result.stats.allStatPercent = extractFlame(line);
+    if (/Boss Damage|amage/i.test(line)) result.stats.boss = extractFlame(line);
 
-    if (/Attack Power[: ]?\+?(\d+)/i.test(line) || /ower[: ]?\+?(\d+)/i.test(line))
-      result.stats.attack = parseInt((line.match(/Attack Power[: ]?\+?(\d+)/i) || line.match(/ower[: ]?\+?(\d+)/i))[1]);
-
-    if (/Magic Attack[: ]?\+?(\d+)/i.test(line)) result.stats.magic = parseInt(line.match(/Magic Attack[: ]?\+?(\d+)/i)[1]);
-
-    if (/All Stats[: ]?\+?(\d+)%/i.test(line) || /All Stat[: ]?\+?(\d+)%/i.test(line))
-      result.stats.allStatPercent = parseInt((line.match(/All Stats[: ]?\+?(\d+)%/i) || line.match(/All Stat[: ]?\+?(\d+)%/i))[1]);
-
-    if (/Boss Damage[: ]?\+?(\d+)%/i.test(line) || /amage[: ]?\+?(\d+)%/i.test(line))
-      result.stats.boss = parseInt((line.match(/Boss Damage[: ]?\+?(\d+)%/i) || line.match(/amage[: ]?\+?(\d+)%/i))[1]);
-
-    // Tolerant matching for weapon type
     const typeMatch = line.match(/Type[: ]?(.+)/i) || line.match(/ype[: ]?(.+)/i);
     if (typeMatch) result.stats.weaponType = typeMatch[1];
   }
@@ -131,9 +94,8 @@ function getStatTierBreakdown(stats, main, sub, useMagic) {
   return breakdown;
 }
 
-async function analyzeFlame(imageBuffer, mainStat, subStat) {
-  const enhanced = await isEnhanced(imageBuffer);
-  const ocrResult = await extractStats(imageBuffer);
+async function analyzeFlame(imageBuffer, mainStat, subStat, starforced) {
+  const ocrResult = await extractStats(imageBuffer, starforced);
   const stats = ocrResult.stats;
   const useMagic = shouldUseMagicAttack(stats.weaponType);
 
@@ -141,13 +103,13 @@ async function analyzeFlame(imageBuffer, mainStat, subStat) {
   const tierBreakdown = getStatTierBreakdown(stats, mainStat, subStat, useMagic);
 
   return {
-    enhanced,
     flameScore,
     useMagic,
     stats,
     tiers: tierBreakdown,
     mainStat,
-    subStat
+    subStat,
+    starforced
   };
 }
 

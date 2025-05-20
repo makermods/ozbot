@@ -1,146 +1,120 @@
 require('dotenv').config();
-const {
-  Client,
-  GatewayIntentBits,
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
-  Events
-} = require('discord.js');
-const { analyzeFlame } = require('./flamescore.js');
-const fetch = require('node-fetch');
-
-const ALLOWED_CHANNEL_ID = process.env.CHANNEL_ID;
+const { Client, GatewayIntentBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, Events } = require('discord.js');
+const { analyzeFlame } = require('./flamescore');
+const fs = require('fs');
+const path = require('path');
 
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent
+    GatewayIntentBits.MessageContent,
+    GatewayIntentBits.MessageAttachments,
   ]
 });
 
-const imageCache = new Map();
-const messageCache = new Map();
+const TARGET_CHANNEL_ID = process.env.TARGET_CHANNEL_ID;
+
+const statOptions = ['STR', 'DEX', 'INT', 'LUK', 'HP'];
 
 client.once('ready', () => {
   console.log(`Logged in as ${client.user.tag}`);
 });
 
-client.on('messageCreate', async (message) => {
-  if (
-    message.author.bot ||
-    !message.attachments.size ||
-    message.channel.id !== ALLOWED_CHANNEL_ID
-  ) return;
+const userSessions = new Map();
 
-  const imageAttachment = message.attachments.first();
-  const imageBuffer = await fetch(imageAttachment.url)
-    .then(res => res.arrayBuffer())
-    .then(buf => Buffer.from(buf));
+client.on(Events.MessageCreate, async (message) => {
+  if (message.author.bot || message.channel.id !== TARGET_CHANNEL_ID) return;
+  if (!message.attachments.size) return;
 
-  imageCache.set(message.author.id, imageBuffer);
+  const attachment = message.attachments.first();
+  if (!attachment.contentType.startsWith('image/')) return;
 
-  const mainStatRow = new ActionRowBuilder().addComponents(
-    ['STR', 'DEX', 'INT', 'LUK', 'HP'].map(stat =>
-      new ButtonBuilder()
-        .setCustomId(`main_${stat}`)
-        .setLabel(stat)
-        .setStyle(ButtonStyle.Primary)
-    )
-  );
+  const imagePath = path.join(__dirname, 'temp', `${Date.now()}-${attachment.name}`);
+  const response = await fetch(attachment.url);
+  const buffer = Buffer.from(await response.arrayBuffer());
+  fs.mkdirSync(path.dirname(imagePath), { recursive: true });
+  fs.writeFileSync(imagePath, buffer);
 
-  const prompt = await message.reply({
-    content: 'What is your **main stat**?',
-    components: [mainStatRow]
+  const row = new ActionRowBuilder()
+    .addComponents(statOptions.map(stat =>
+      new ButtonBuilder().setCustomId(`main_${stat}`).setLabel(stat).setStyle(ButtonStyle.Primary)
+    ));
+
+  const prompt = await message.reply({ content: 'What is your main stat?', components: [row] });
+
+  userSessions.set(message.author.id, {
+    step: 'main',
+    imagePath,
+    messageId: prompt.id,
+    originalImageId: message.id,
   });
 
-  messageCache.set(message.author.id, {
-    uploadMessage: message,
-    mainPrompt: prompt,
-    secondaryPrompt: null
-  });
+  setTimeout(() => fs.existsSync(imagePath) && fs.unlinkSync(imagePath), 60000);
 });
 
 client.on(Events.InteractionCreate, async interaction => {
   if (!interaction.isButton()) return;
-  if (interaction.channelId !== ALLOWED_CHANNEL_ID) return;
 
-  const [type, main, sub] = interaction.customId.split('_');
+  const session = userSessions.get(interaction.user.id);
+  if (!session) return;
 
-  if (type === 'main') {
-    const secondaryStatRow = new ActionRowBuilder().addComponents(
-      ['STR', 'DEX', 'INT', 'LUK'].map(stat =>
-        new ButtonBuilder()
-          .setCustomId(`secondary_${main}_${stat}`)
-          .setLabel(stat)
-          .setStyle(ButtonStyle.Secondary)
-      )
-    );
+  const [step, value] = interaction.customId.split('_');
 
-    const cached = messageCache.get(interaction.user.id);
-    if (cached?.mainPrompt) cached.mainPrompt.delete().catch(() => {});
+  if (step === 'main') {
+    session.main = value;
+    session.step = 'sub';
 
-    const reply = await interaction.reply({
-      content: 'What is your **secondary stat**?',
-      components: [secondaryStatRow],
-      fetchReply: true
-    });
+    const row = new ActionRowBuilder()
+      .addComponents(statOptions.filter(s => s !== value).map(stat =>
+        new ButtonBuilder().setCustomId(`sub_${stat}`).setLabel(stat).setStyle(ButtonStyle.Secondary)
+      ));
 
-    if (cached) cached.secondaryPrompt = reply;
+    await interaction.update({ content: 'What is your secondary stat?', components: [row] });
   }
 
-  if (type === 'secondary') {
-    const mainStat = main;
-    const subStat = sub;
-    const imageBuffer = imageCache.get(interaction.user.id);
-    const cached = messageCache.get(interaction.user.id);
+  else if (step === 'sub') {
+    session.sub = value;
+    session.step = 'starforced';
 
-    if (cached?.secondaryPrompt) cached.secondaryPrompt.delete().catch(() => {});
+    const row = new ActionRowBuilder()
+      .addComponents([
+        new ButtonBuilder().setCustomId('starforced_yes').setLabel('Yes').setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId('starforced_no').setLabel('No').setStyle(ButtonStyle.Danger)
+      ]);
 
-    if (!imageBuffer) {
-      return interaction.reply({
-        content: 'No image found. Please upload an item image first.',
-        ephemeral: true
-      });
-    }
+    await interaction.update({ content: 'Is your item starforced?', components: [row] });
+  }
 
-    await interaction.deferReply();
+  else if (step === 'starforced') {
+    const isStarforced = value === 'yes';
 
-    const result = await analyzeFlame(imageBuffer, mainStat, subStat);
-    const s = result.stats;
+    const imageBuffer = fs.readFileSync(session.imagePath);
+    const result = await analyzeFlame(imageBuffer, session.main, session.sub, isStarforced);
 
-    const statLine = [
-      `Main Stat: ${s[mainStat] || 0}`,
-      `Sub Stat: ${s[subStat] || 0}`,
-      result.useMagic ? `MATT: ${s.magic || 0}` : `ATK: ${s.attack || 0}`,
-      `All Stat%: ${s.allStatPercent || 0}`
-    ];
-    if (s.boss) statLine.push(`Boss: ${s.boss}%`);
+    const { stats, tiers, flameScore, mainStat, subStat, useMagic } = result;
 
-    const tierLine = result.tiers.join(', ');
+    const statLine = `Main Stat: ${stats[mainStat]} | Sub Stat: ${stats[subStat]}${useMagic ? ` | MATT: ${stats.magic}` : ` | ATK: ${stats.attack}`} | All Stat%: ${stats.allStatPercent}`;
+    const tierLine = tiers.join(', ');
+    const scoreLine = `**Flame Score:** ${flameScore} (${mainStat})`;
 
-    const finalReply = await interaction.editReply({
-      content:
-`**Flame Stats:**  
-${statLine.join('  ')}
-
-**Flame Tier:**  
-${tierLine}
-
-**Flame Score:**  
-${result.flameScore} (${mainStat})  
-⭐ Enhancement: ${result.enhanced ? 'Enhanced' : 'Clean'}`
+    const reply = await interaction.update({
+      content: `**Flame Stats:**\n${statLine}\n\n**Flame Tier:**\n${tierLine}\n\n${scoreLine}`,
+      components: []
     });
 
-    // Cleanup
-    setTimeout(() => {
-      finalReply.delete().catch(() => {});
-      if (cached?.uploadMessage) cached.uploadMessage.delete().catch(() => {});
-    }, 60_000);
+    // Delete bot reply and user image after 60s
+    setTimeout(async () => {
+      try {
+        const msg = await interaction.channel.messages.fetch(reply.id);
+        if (msg) await msg.delete();
+        const userMsg = await interaction.channel.messages.fetch(session.originalImageId);
+        if (userMsg) await userMsg.delete();
+      } catch (err) {}
+    }, 60000);
 
-    imageCache.delete(interaction.user.id);
-    messageCache.delete(interaction.user.id);
+    fs.unlinkSync(session.imagePath);
+    userSessions.delete(interaction.user.id);
   }
 });
 

@@ -1,7 +1,6 @@
 const Tesseract = require('tesseract.js');
 const Jimp = require('jimp');
 
-// Flame tier breakpoints
 const FLAME_TIERS = {
   stat: [4, 8, 12, 16, 20, 24, 28],
   attack: [2, 4, 6, 8, 10, 12, 14],
@@ -9,7 +8,6 @@ const FLAME_TIERS = {
   boss: [2, 4, 6, 8, 10, 12, 14],
 };
 
-// Magic weapon identifiers
 const MAGE_WEAPONS = [
   'wand', 'staff', 'shining rod', 'fan', 'cane', 'psy-limiter'
 ];
@@ -21,10 +19,11 @@ function getTier(value, table) {
   return 0;
 }
 
-// Determine if the item is enhanced (yellow stars)
 async function isEnhanced(imageBuffer) {
   const image = await Jimp.read(imageBuffer);
-  const starRegion = image.clone().crop(30, 25, 300, 45); // Adjusted for consistency
+
+  // ✅ Corrected crop area to capture the star row at the top
+  const starRegion = image.clone().crop(10, 10, 350, 50);
 
   let yellowStars = 0;
   let greyStars = 0;
@@ -41,12 +40,11 @@ async function isEnhanced(imageBuffer) {
   return yellowStars > greyStars;
 }
 
-// Extract stats from a cropped and cleaned image
 async function extractStats(imageBuffer) {
   const image = await Jimp.read(imageBuffer);
 
-  // Crop to flame stat region
-  const cropped = image.clone().crop(50, 275, image.bitmap.width - 100, 180);
+  // ✅ Cropped higher and larger to include stat labels like STR, DEX
+  const cropped = image.clone().crop(50, 240, image.bitmap.width - 100, 220);
 
   cropped
     .grayscale()
@@ -82,15 +80,19 @@ async function extractStats(imageBuffer) {
     if (/INT[: ]?\+?(\d+)/i.test(line)) result.stats.INT = parseInt(line.match(/INT[: ]?\+?(\d+)/i)[1]);
     if (/LUK[: ]?\+?(\d+)/i.test(line)) result.stats.LUK = parseInt(line.match(/LUK[: ]?\+?(\d+)/i)[1]);
     if (/HP[: ]?\+?(\d+)/i.test(line)) result.stats.HP = parseInt(line.match(/HP[: ]?\+?(\d+)/i)[1]);
+
     if (/Attack Power[: ]?\+?(\d+)/i.test(line) || /ower[: ]?\+?(\d+)/i.test(line))
       result.stats.attack = parseInt((line.match(/Attack Power[: ]?\+?(\d+)/i) || line.match(/ower[: ]?\+?(\d+)/i))[1]);
+
     if (/Magic Attack[: ]?\+?(\d+)/i.test(line)) result.stats.magic = parseInt(line.match(/Magic Attack[: ]?\+?(\d+)/i)[1]);
+
     if (/All Stats[: ]?\+?(\d+)%/i.test(line) || /All Stat[: ]?\+?(\d+)%/i.test(line))
       result.stats.allStatPercent = parseInt((line.match(/All Stats[: ]?\+?(\d+)%/i) || line.match(/All Stat[: ]?\+?(\d+)%/i))[1]);
+
     if (/Boss Damage[: ]?\+?(\d+)%/i.test(line) || /amage[: ]?\+?(\d+)%/i.test(line))
       result.stats.boss = parseInt((line.match(/Boss Damage[: ]?\+?(\d+)%/i) || line.match(/amage[: ]?\+?(\d+)%/i))[1]);
 
-    // Tolerant match for "Type:"
+    // Loose match for weapon type
     const typeMatch = line.match(/Type[: ]?(.+)/i) || line.match(/ype[: ]?(.+)/i);
     if (typeMatch) result.stats.weaponType = typeMatch[1];
   }
@@ -100,7 +102,6 @@ async function extractStats(imageBuffer) {
   return result;
 }
 
-// Decide if magic attack is used
 function shouldUseMagicAttack(weaponType) {
   if (!weaponType) return false;
   return MAGE_WEAPONS.some(type => weaponType.toLowerCase().includes(type));

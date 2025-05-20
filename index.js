@@ -21,7 +21,7 @@ const client = new Client({
 });
 
 const imageCache = new Map();
-const messageCache = new Map(); // to track messages per user
+const messageCache = new Map();
 
 client.once('ready', () => {
   console.log(`Logged in as ${client.user.tag}`);
@@ -60,8 +60,6 @@ client.on('messageCreate', async (message) => {
     mainPrompt: prompt,
     secondaryPrompt: null
   });
-
-  // Image message will be deleted later, after processing
 });
 
 client.on(Events.InteractionCreate, async interaction => {
@@ -80,11 +78,8 @@ client.on(Events.InteractionCreate, async interaction => {
       )
     );
 
-    // Delete main prompt message
     const cached = messageCache.get(interaction.user.id);
-    if (cached?.mainPrompt) {
-      cached.mainPrompt.delete().catch(() => {});
-    }
+    if (cached?.mainPrompt) cached.mainPrompt.delete().catch(() => {});
 
     const reply = await interaction.reply({
       content: 'What is your **secondary stat**?',
@@ -99,11 +94,9 @@ client.on(Events.InteractionCreate, async interaction => {
     const mainStat = main;
     const subStat = sub;
     const imageBuffer = imageCache.get(interaction.user.id);
-
     const cached = messageCache.get(interaction.user.id);
-    if (cached?.secondaryPrompt) {
-      cached.secondaryPrompt.delete().catch(() => {});
-    }
+
+    if (cached?.secondaryPrompt) cached.secondaryPrompt.delete().catch(() => {});
 
     if (!imageBuffer) {
       return interaction.reply({
@@ -136,9 +129,11 @@ ${statLine.join('  ')}
 ${tierLine}
 
 **Flame Score:**  
-${result.flameScore} (${mainStat})${result.enhanced ? ' (Enhanced ⭐)' : ''}`
+${result.flameScore} (${mainStat})  
+⭐ Enhancement: ${result.enhanced ? 'Enhanced' : 'Clean'}`
     });
 
+    // Cleanup
     setTimeout(() => {
       finalReply.delete().catch(() => {});
       if (cached?.uploadMessage) cached.uploadMessage.delete().catch(() => {});

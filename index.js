@@ -1,9 +1,11 @@
 require('dotenv').config();
 const {
   Client,
-  Intents,
-  MessageActionRow,
-  MessageButton
+  GatewayIntentBits,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  Events
 } = require('discord.js');
 const { analyzeFlame } = require('./flamescore');
 const fs = require('fs');
@@ -12,9 +14,9 @@ const fetch = require('node-fetch');
 
 const client = new Client({
   intents: [
-    Intents.FLAGS.GUILDS,
-    Intents.FLAGS.GUILD_MESSAGES,
-    Intents.FLAGS.MESSAGE_CONTENT
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent
   ]
 });
 
@@ -26,7 +28,7 @@ client.once('ready', () => {
   console.log(`Logged in as ${client.user.tag}`);
 });
 
-client.on('messageCreate', async (message) => {
+client.on(Events.MessageCreate, async (message) => {
   if (message.author.bot || message.channel.id !== TARGET_CHANNEL_ID) return;
   if (!message.attachments.size) return;
 
@@ -40,12 +42,12 @@ client.on('messageCreate', async (message) => {
   fs.mkdirSync(path.dirname(imagePath), { recursive: true });
   fs.writeFileSync(imagePath, buffer);
 
-  const row = new MessageActionRow()
+  const row = new ActionRowBuilder()
     .addComponents(statOptions.map(stat =>
-      new MessageButton()
+      new ButtonBuilder()
         .setCustomId(`main_${stat}`)
         .setLabel(stat)
-        .setStyle('PRIMARY')
+        .setStyle(ButtonStyle.Primary)
     ));
 
   const prompt = await message.reply({ content: 'What is your main stat?', components: [row] });
@@ -62,7 +64,7 @@ client.on('messageCreate', async (message) => {
   }, 60000);
 });
 
-client.on('interactionCreate', async (interaction) => {
+client.on(Events.InteractionCreate, async (interaction) => {
   if (!interaction.isButton()) return;
 
   const session = userSessions.get(interaction.user.id);
@@ -74,12 +76,12 @@ client.on('interactionCreate', async (interaction) => {
     session.main = value;
     session.step = 'sub';
 
-    const row = new MessageActionRow()
+    const row = new ActionRowBuilder()
       .addComponents(statOptions.filter(s => s !== value).map(stat =>
-        new MessageButton()
+        new ButtonBuilder()
           .setCustomId(`sub_${stat}`)
           .setLabel(stat)
-          .setStyle('SECONDARY')
+          .setStyle(ButtonStyle.Secondary)
       ));
 
     await interaction.update({ content: 'What is your secondary stat?', components: [row] });
@@ -89,10 +91,10 @@ client.on('interactionCreate', async (interaction) => {
     session.sub = value;
     session.step = 'starforced';
 
-    const row = new MessageActionRow()
+    const row = new ActionRowBuilder()
       .addComponents([
-        new MessageButton().setCustomId('starforced_yes').setLabel('Yes').setStyle('SUCCESS'),
-        new MessageButton().setCustomId('starforced_no').setLabel('No').setStyle('DANGER')
+        new ButtonBuilder().setCustomId('starforced_yes').setLabel('Yes').setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId('starforced_no').setLabel('No').setStyle(ButtonStyle.Danger)
       ]);
 
     await interaction.update({ content: 'Is your item starforced?', components: [row] });

@@ -1,0 +1,26 @@
+{
+  "name": "ozbot",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/makermods/ozbot.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/makermods/ozbot/issues"
+  },
+  "homepage": "https://github.com/makermods/ozbot#readme",
+  "description": "",
+  "dependencies": {
+    "discord.js": "^14.19.3",
+    "jimp": "^1.6.0",
+    "node-fetch": "^3.3.2",
+    "tesseract.js": "^6.0.1"
+  }
+}

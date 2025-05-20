@@ -1,12 +1,11 @@
 const Tesseract = require('tesseract.js');
-const Jimp = require('jimp').default;
+const Jimp = require('jimp');
 
-// Typical flame tier values for level 160+ gear
 const FLAME_TIERS = {
-  stat: [4, 8, 12, 16, 20, 24, 28],          // T1–T7
-  attack: [2, 4, 6, 8, 10, 12, 14],          // T1–T7
-  allStat: [1, 2, 3, 4, 5, 6, 7],            // T1–T7
-  boss: [2, 4, 6, 8, 10, 12, 14],            // T1–T7
+  stat: [4, 8, 12, 16, 20, 24, 28],
+  attack: [2, 4, 6, 8, 10, 12, 14],
+  allStat: [1, 2, 3, 4, 5, 6, 7],
+  boss: [2, 4, 6, 8, 10, 12, 14],
 };
 
 const MAGE_WEAPONS = [
@@ -22,7 +21,7 @@ function getTier(value, table) {
 
 async function isEnhanced(imageBuffer) {
   const image = await Jimp.read(imageBuffer);
-  const starRegion = image.clone().crop(50, 30, 200, 40); // Adjust as needed
+  const starRegion = image.clone().crop(50, 30, 200, 40); // May need adjusting
 
   let yellowStars = 0;
   let greyStars = 0;
@@ -40,9 +39,21 @@ async function isEnhanced(imageBuffer) {
 }
 
 async function extractStats(imageBuffer) {
-  const { data: { text } } = await Tesseract.recognize(imageBuffer, 'eng', {
-    tessedit_char_whitelist: '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ:+% '
+  const image = await Jimp.read(imageBuffer);
+  image
+    .grayscale()
+    .contrast(1)
+    .normalize()
+    .resize(image.bitmap.width * 2, image.bitmap.height * 2);
+
+  const processedBuffer = await image.getBufferAsync(Jimp.MIME_PNG);
+
+  const { data: { text } } = await Tesseract.recognize(processedBuffer, 'eng', {
+    tessedit_char_whitelist: '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ:+% ',
   });
+
+  console.log('--- OCR TEXT ---');
+  console.log(text);
 
   const result = {
     stats: {
@@ -58,16 +69,16 @@ async function extractStats(imageBuffer) {
   for (let line of lines) {
     line = line.trim();
 
-    if (/STR: \+(\d+)/i.test(line)) result.stats.STR = parseInt(line.match(/STR: \+(\d+)/i)[1]);
-    if (/DEX: \+(\d+)/i.test(line)) result.stats.DEX = parseInt(line.match(/DEX: \+(\d+)/i)[1]);
-    if (/INT: \+(\d+)/i.test(line)) result.stats.INT = parseInt(line.match(/INT: \+(\d+)/i)[1]);
-    if (/LUK: \+(\d+)/i.test(line)) result.stats.LUK = parseInt(line.match(/LUK: \+(\d+)/i)[1]);
-    if (/HP: \+(\d+)/i.test(line)) result.stats.HP = parseInt(line.match(/HP: \+(\d+)/i)[1]);
-    if (/Attack Power: \+(\d+)/i.test(line)) result.stats.attack = parseInt(line.match(/Attack Power: \+(\d+)/i)[1]);
-    if (/Magic Attack: \+(\d+)/i.test(line)) result.stats.magic = parseInt(line.match(/Magic Attack: \+(\d+)/i)[1]);
-    if (/All Stats: \+(\d+)%/i.test(line)) result.stats.allStatPercent = parseInt(line.match(/All Stats: \+(\d+)%/i)[1]);
-    if (/Boss Damage: \+(\d+)%/i.test(line)) result.stats.boss = parseInt(line.match(/Boss Damage: \+(\d+)%/i)[1]);
-    if (/Type: (.+)/i.test(line)) result.stats.weaponType = line.match(/Type: (.+)/i)[1];
+    if (/STR[: ]?\+?(\d+)/i.test(line)) result.stats.STR = parseInt(line.match(/STR[: ]?\+?(\d+)/i)[1]);
+    if (/DEX[: ]?\+?(\d+)/i.test(line)) result.stats.DEX = parseInt(line.match(/DEX[: ]?\+?(\d+)/i)[1]);
+    if (/INT[: ]?\+?(\d+)/i.test(line)) result.stats.INT = parseInt(line.match(/INT[: ]?\+?(\d+)/i)[1]);
+    if (/LUK[: ]?\+?(\d+)/i.test(line)) result.stats.LUK = parseInt(line.match(/LUK[: ]?\+?(\d+)/i)[1]);
+    if (/HP[: ]?\+?(\d+)/i.test(line)) result.stats.HP = parseInt(line.match(/HP[: ]?\+?(\d+)/i)[1]);
+    if (/Attack Power[: ]?\+?(\d+)/i.test(line)) result.stats.attack = parseInt(line.match(/Attack Power[: ]?\+?(\d+)/i)[1]);
+    if (/Magic Attack[: ]?\+?(\d+)/i.test(line)) result.stats.magic = parseInt(line.match(/Magic Attack[: ]?\+?(\d+)/i)[1]);
+    if (/All Stats[: ]?\+?(\d+)%/i.test(line)) result.stats.allStatPercent = parseInt(line.match(/All Stats[: ]?\+?(\d+)%/i)[1]);
+    if (/Boss Damage[: ]?\+?(\d+)%/i.test(line)) result.stats.boss = parseInt(line.match(/Boss Damage[: ]?\+?(\d+)%/i)[1]);
+    if (/Type[: ]?(.+)/i.test(line)) result.stats.weaponType = line.match(/Type[: ]?(.+)/i)[1];
   }
 
   return result;

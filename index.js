@@ -1,38 +1,44 @@
 require('dotenv').config();
-const { Client, GatewayIntentBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, Events } = require('discord.js');
+const {
+  Client,
+  GatewayIntentBits,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  Events
+} = require('discord.js');
 const { analyzeFlame } = require('./flamescore');
 const fs = require('fs');
 const path = require('path');
+const fetch = require('node-fetch');
 
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
-    GatewayIntentBits.MessageAttachments,
+    GatewayIntentBits.MessageContent
   ]
 });
 
 const TARGET_CHANNEL_ID = process.env.TARGET_CHANNEL_ID;
-
 const statOptions = ['STR', 'DEX', 'INT', 'LUK', 'HP'];
+const userSessions = new Map();
 
 client.once('ready', () => {
   console.log(`Logged in as ${client.user.tag}`);
 });
-
-const userSessions = new Map();
 
 client.on(Events.MessageCreate, async (message) => {
   if (message.author.bot || message.channel.id !== TARGET_CHANNEL_ID) return;
   if (!message.attachments.size) return;
 
   const attachment = message.attachments.first();
-  if (!attachment.contentType.startsWith('image/')) return;
+  if (!attachment.contentType?.startsWith('image/')) return;
 
   const imagePath = path.join(__dirname, 'temp', `${Date.now()}-${attachment.name}`);
-  const response = await fetch(attachment.url);
-  const buffer = Buffer.from(await response.arrayBuffer());
+  const res = await fetch(attachment.url);
+  const buffer = Buffer.from(await res.arrayBuffer());
+
   fs.mkdirSync(path.dirname(imagePath), { recursive: true });
   fs.writeFileSync(imagePath, buffer);
 
@@ -47,13 +53,16 @@ client.on(Events.MessageCreate, async (message) => {
     step: 'main',
     imagePath,
     messageId: prompt.id,
-    originalImageId: message.id,
+    originalImageId: message.id
   });
 
-  setTimeout(() => fs.existsSync(imagePath) && fs.unlinkSync(imagePath), 60000);
+  // Clean up image after 60s
+  setTimeout(() => {
+    if (fs.existsSync(imagePath)) fs.unlinkSync(imagePath);
+  }, 60000);
 });
 
-client.on(Events.InteractionCreate, async interaction => {
+client.on(Events.InteractionCreate, async (interaction) => {
   if (!interaction.isButton()) return;
 
   const session = userSessions.get(interaction.user.id);
@@ -88,13 +97,13 @@ client.on(Events.InteractionCreate, async interaction => {
 
   else if (step === 'starforced') {
     const isStarforced = value === 'yes';
-
     const imageBuffer = fs.readFileSync(session.imagePath);
     const result = await analyzeFlame(imageBuffer, session.main, session.sub, isStarforced);
 
     const { stats, tiers, flameScore, mainStat, subStat, useMagic } = result;
 
-    const statLine = `Main Stat: ${stats[mainStat]} | Sub Stat: ${stats[subStat]}${useMagic ? ` | MATT: ${stats.magic}` : ` | ATK: ${stats.attack}`} | All Stat%: ${stats.allStatPercent}`;
+    const statLine = `Main Stat: ${stats[mainStat]} | Sub Stat: ${stats[subStat]}` +
+                     `${useMagic ? ` | MATT: ${stats.magic}` : ` | ATK: ${stats.attack}`} | All Stat%: ${stats.allStatPercent}`;
     const tierLine = tiers.join(', ');
     const scoreLine = `**Flame Score:** ${flameScore} (${mainStat})`;
 
@@ -103,14 +112,14 @@ client.on(Events.InteractionCreate, async interaction => {
       components: []
     });
 
-    // Delete bot reply and user image after 60s
+    // Cleanup messages after 60s
     setTimeout(async () => {
       try {
         const msg = await interaction.channel.messages.fetch(reply.id);
         if (msg) await msg.delete();
         const userMsg = await interaction.channel.messages.fetch(session.originalImageId);
         if (userMsg) await userMsg.delete();
-      } catch (err) {}
+      } catch {}
     }, 60000);
 
     fs.unlinkSync(session.imagePath);

@@ -22,7 +22,7 @@ function getTier(value, table) {
 async function isEnhanced(imageBuffer) {
   const image = await Jimp.read(imageBuffer);
 
-  // ✅ Full-width crop along top to capture yellow/gray stars
+  // ✅ Capture full star bar at top
   const starRegion = image.clone().crop(10, 0, image.bitmap.width - 20, 55);
 
   let yellowStars = 0;
@@ -43,13 +43,15 @@ async function isEnhanced(imageBuffer) {
 async function extractStats(imageBuffer) {
   const image = await Jimp.read(imageBuffer);
 
-  // ✅ Wider and taller crop to capture stat names + values fully
-  const cropped = image.clone().crop(30, 230, image.bitmap.width - 60, 280);
+  // ✅ Wider + taller crop to include stat labels and values
+  const cropped = image.clone().crop(10, 230, image.bitmap.width - 40, 280);
 
   cropped
     .grayscale()
     .contrast(1)
     .normalize()
+    .brightness(0.1)
+    .blur(1)
     .resize(cropped.bitmap.width * 2, cropped.bitmap.height * 2);
 
   const processedBuffer = await cropped.getBufferAsync(Jimp.MIME_PNG);
@@ -92,7 +94,7 @@ async function extractStats(imageBuffer) {
     if (/Boss Damage[: ]?\+?(\d+)%/i.test(line) || /amage[: ]?\+?(\d+)%/i.test(line))
       result.stats.boss = parseInt((line.match(/Boss Damage[: ]?\+?(\d+)%/i) || line.match(/amage[: ]?\+?(\d+)%/i))[1]);
 
-    // Loose match for weapon type
+    // Tolerant matching for weapon type
     const typeMatch = line.match(/Type[: ]?(.+)/i) || line.match(/ype[: ]?(.+)/i);
     if (typeMatch) result.stats.weaponType = typeMatch[1];
   }

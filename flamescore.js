@@ -2,7 +2,6 @@ const Tesseract = require('tesseract.js');
 const Jimp = require('jimp');
 
 const FIXED_TIERS = {
-  attack: [2, 4, 6, 8, 10, 12, 14],
   allStat: [1, 2, 3, 4, 5, 6, 7],
   boss: [2, 4, 6, 8, 10, 12, 14]
 };
@@ -24,29 +23,91 @@ const LEVEL_BASED_TIERS = [
 
 const MAGE_WEAPONS = ['wand', 'staff', 'shining rod', 'fan', 'cane', 'psy-limiter'];
 
+const WEAPON_TIER_TABLES = {
+  absolab: {
+    103: [16, 23, 32, 42, 53],
+    143: [22, 32, 44, 58, 74],
+    150: [23, 33, 46, 60, 77],
+    151: [23, 34, 46, 61, 78],
+    154: [24, 34, 47, 62, 79],
+    184: [28, 41, 56, 74, 95],
+    192: [29, 43, 59, 77, 99],
+    197: [30, 44, 60, 79, 101],
+    205: [31, 46, 63, 82, 106],
+    210: [32, 47, 64, 84, 108],
+    241: [37, 54, 73, 97, 124],
+    245: [37, 54, 75, 98, 126]
+  },
+  arcane: {
+    149: [27, 40, 55, 72, 92],
+    206: [38, 55, 75, 99, 127],
+    216: [39, 58, 79, 104, 133],
+    218: [40, 58, 80, 105, 135],
+    221: [40, 59, 81, 106, 136],
+    264: [48, 70, 96, 127, 163],
+    276: [50, 73, 101, 133, 170],
+    283: [51, 75, 103, 136, 175],
+    295: [54, 78, 108, 142, 182],
+    302: [55, 80, 110, 145, 186],
+    347: [63, 92, 126, 167, 214],
+    353: [64, 94, 129, 170, 218]
+  },
+  genesis: {
+    172: [31, 46, 63, 83, 106],
+    237: [43, 63, 87, 114, 146],
+    249: [45, 66, 91, 120, 154],
+    251: [46, 67, 92, 121, 155],
+    255: [46, 68, 93, 123, 157],
+    304: [55, 81, 111, 146, 187],
+    318: [58, 84, 116, 153, 196],
+    326: [59, 87, 119, 157, 201],
+    337: [61, 89, 123, 162, 208],
+    340: [62, 90, 124, 163, 210],
+    342: [62, 91, 125, 164, 211],
+    348: [63, 92, 127, 167, 214],
+    400: [72, 106, 146, 192, 246],
+    406: [74, 108, 148, 195, 250]
+  }
+};
+
 function shouldUseMagicAttack(weaponType) {
   if (!weaponType) return false;
   return MAGE_WEAPONS.some(type => weaponType.toLowerCase().includes(type));
 }
 
-function calculateFlameScore(stats, main, sub, useMagic) {
+function isWeaponItem(typeText) {
+  return /claw|sword|bow|dagger|staff|rod|gun|cannon|knuckle|katana|polearm|spear|crossbow|weapon/i.test(typeText);
+}
+
+function detectWeaponSet(text) {
+  const lc = text.toLowerCase();
+  if (lc.includes('absolab')) return 'absolab';
+  if (lc.includes('arcane umbra')) return 'arcane';
+  if (lc.includes('genesis')) return 'genesis';
+  return null;
+}
+
+function getWeaponTier(flame, baseAtk, category) {
+  const table = WEAPON_TIER_TABLES[category];
+  if (!table || !table[baseAtk]) return null;
+
+  const tiers = table[baseAtk];
+  for (let i = tiers.length - 1; i >= 0; i--) {
+    if (flame >= tiers[i]) return `T${i + 3}`;
+  }
+  return 'T0';
+}
+
+function calculateFlameScore(stats, main, sub, useMagic, isWeapon) {
   let score = 0;
   score += stats[main] || 0;
   if (sub) score += Math.floor((stats[sub] || 0) / 12);
-  if (useMagic) score += (stats.magic || 0) * 3;
-  else score += (stats.attack || 0) * 3;
+  if (!isWeapon) {
+    if (useMagic) score += (stats.magic || 0) * 3;
+    else score += (stats.attack || 0) * 3;
+  }
   score += (stats.allStatPercent || 0) * 10;
   return score;
-}
-
-function getTier(value, table) {
-  for (let i = table.length - 1; i >= 0; i--) {
-    if (value >= table[i]) {
-      console.log(`getTier: value=${value} → tier=${i + 1} (threshold=${table[i]})`);
-      return i + 1;
-    }
-  }
-  return 0;
 }
 
 function getLevelBasedTierTable(level) {
@@ -56,23 +117,32 @@ function getLevelBasedTierTable(level) {
   return LEVEL_BASED_TIERS[0].values;
 }
 
-function getStatTierBreakdown(stats, main, sub, useMagic, equipLevel) {
+function getTier(value, table) {
+  for (let i = table.length - 1; i >= 0; i--) {
+    if (value >= table[i]) return i + 1;
+  }
+  return 0;
+}
+
+function getStatTierBreakdown(stats, main, sub, useMagic, equipLevel, isWeapon, weaponBase, weaponSet) {
   const breakdown = [];
   const levelBased = getLevelBasedTierTable(equipLevel);
-  console.log(`[Tier Table for Level ${equipLevel}]`, levelBased);
 
-  if (stats[main]) {
-    console.log(`Checking ${main}: ${stats[main]} against`, levelBased);
-    breakdown.push(`T${getTier(stats[main], levelBased)} (${main})`);
+  if (stats[main]) breakdown.push(`T${getTier(stats[main], levelBased)} (${main})`);
+  if (sub && stats[sub]) breakdown.push(`T${getTier(stats[sub], levelBased)} (${sub})`);
+
+  if (isWeapon && weaponSet && weaponBase) {
+    const flameVal = useMagic ? stats.magic : stats.attack;
+    const tier = getWeaponTier(flameVal, weaponBase, weaponSet);
+    if (tier) breakdown.push(`${tier} (${useMagic ? 'MATT' : 'ATK'})`);
+  } else {
+    if (useMagic && stats.magic) breakdown.push(`T${getTier(stats.magic, [2, 4, 6, 8, 10, 12, 14])} (MATT)`);
+    if (!useMagic && stats.attack) breakdown.push(`T${getTier(stats.attack, [2, 4, 6, 8, 10, 12, 14])} (ATK)`);
   }
-  if (sub && stats[sub]) {
-    console.log(`Checking ${sub}: ${stats[sub]} against`, levelBased);
-    breakdown.push(`T${getTier(stats[sub], levelBased)} (${sub})`);
-  }
-  if (useMagic && stats.magic) breakdown.push(`T${getTier(stats.magic, FIXED_TIERS.attack)} (MATT)`);
-  if (!useMagic && stats.attack) breakdown.push(`T${getTier(stats.attack, FIXED_TIERS.attack)} (ATK)`);
+
   if (stats.allStatPercent) breakdown.push(`T${getTier(stats.allStatPercent, FIXED_TIERS.allStat)} (All Stat%)`);
   if (stats.boss) breakdown.push(`T${getTier(stats.boss, FIXED_TIERS.boss)} (Boss)`);
+
   return breakdown;
 }
 
@@ -86,9 +156,7 @@ async function extractStats(imageBuffer, isStarforced) {
     .brightness(0.1)
     .quality(100);
 
-  const {
-    data: { text }
-  } = await Tesseract.recognize(await image.getBufferAsync(Jimp.MIME_PNG), 'eng', {
+  const { data: { text } } = await Tesseract.recognize(await image.getBufferAsync(Jimp.MIME_PNG), 'eng', {
     tessedit_char_whitelist: '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ:+%() ',
     psm: 6
   });
@@ -96,7 +164,7 @@ async function extractStats(imageBuffer, isStarforced) {
   const stats = {
     STR: 0, DEX: 0, INT: 0, LUK: 0, HP: 0,
     attack: 0, magic: 0, boss: 0, allStatPercent: 0,
-    weaponType: '', baseAttack: null
+    weaponType: '', baseAttack: 0
   };
 
   let equipLevel = 0;
@@ -105,7 +173,9 @@ async function extractStats(imageBuffer, isStarforced) {
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
   console.log('--- OCR TEXT ---\n' + lines.join('\n'));
 
-  const parseStatLine = (line, key, isPercent = false) => {
+  const fullText = lines.join(' ').toLowerCase();
+
+  const parseStatLine = (line, key) => {
     const totalMatch = line.match(/\+(\d+)/);
     const values = line.match(/\((.*?)\)/)?.[1]?.match(/\d+/g)?.map(Number) || [];
 
@@ -122,13 +192,14 @@ async function extractStats(imageBuffer, isStarforced) {
     if (values.length === 3 && totalMatch) {
       const total = parseInt(totalMatch[1]);
       const [base, flame, enhancement] = values;
-
       if (base + flame + enhancement === total) {
         stats[key] = flame;
+        if (key === 'attack' || key === 'magic') stats.baseAttack = base;
       } else {
-        const correctedFlame = total - base - enhancement;
-        if (correctedFlame >= 0 && correctedFlame <= 999) {
-          stats[key] = correctedFlame;
+        const corrected = total - base - enhancement;
+        if (corrected >= 0 && corrected <= 999) {
+          stats[key] = corrected;
+          if (key === 'attack' || key === 'magic') stats.baseAttack = base;
         } else {
           stats[key] = 0;
           manualInputRequired.push(key);
@@ -147,28 +218,30 @@ async function extractStats(imageBuffer, isStarforced) {
     else if (/Max.*HP/i.test(line)) parseStatLine(line, 'HP');
     else if (/Attack Power|AllackPower/i.test(line)) parseStatLine(line, 'attack');
     else if (/Magic Attack/i.test(line)) parseStatLine(line, 'magic');
-    else if (/All Stats/i.test(line)) parseStatLine(line, 'allStatPercent', true);
-    else if (/Boss Damage|BoseDamage/i.test(line)) parseStatLine(line, 'boss', true);
+    else if (/All Stats/i.test(line)) parseStatLine(line, 'allStatPercent');
+    else if (/Boss Damage|BoseDamage/i.test(line)) parseStatLine(line, 'boss');
     else if (/Type: (.+)/i.test(line)) {
       const match = line.match(/Type: (.+)/i);
       if (match) stats.weaponType = match[1];
     }
-    // 🔧 FIXED: Looser matching for REQ LEV
     else if (/REQ.*LEV.*[:\s]+([0-9]+)/i.test(line)) {
       equipLevel = parseInt(line.match(/REQ.*LEV.*[:\s]+([0-9]+)/i)[1]);
       console.log('[Parsed REQ LEV]', equipLevel);
     }
   }
 
-  return { stats, manualInputRequired, equipLevel };
+  const isWeapon = isWeaponItem(stats.weaponType || '');
+  const weaponSet = detectWeaponSet(fullText);
+
+  return { stats, manualInputRequired, equipLevel, isWeapon, weaponSet };
 }
 
 async function analyzeFlame(imageBuffer, mainStat, subStat, isStarforced) {
-  const { stats, manualInputRequired, equipLevel } = await extractStats(imageBuffer, isStarforced);
+  const { stats, manualInputRequired, equipLevel, isWeapon, weaponSet } = await extractStats(imageBuffer, isStarforced);
   const useMagic = shouldUseMagicAttack(stats.weaponType);
 
-  const flameScore = calculateFlameScore(stats, mainStat, subStat, useMagic);
-  const tierBreakdown = getStatTierBreakdown(stats, mainStat, subStat, useMagic, equipLevel || 0);
+  const flameScore = calculateFlameScore(stats, mainStat, subStat, useMagic, isWeapon);
+  const tierBreakdown = getStatTierBreakdown(stats, mainStat, subStat, useMagic, equipLevel, isWeapon, stats.baseAttack, weaponSet);
 
   return {
     stats,

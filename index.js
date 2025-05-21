@@ -120,12 +120,15 @@ client.on(Events.InteractionCreate, async (interaction) => {
     const isStarforced = value === 'yes';
     session.step = 'analyzing';
 
+    await interaction.deferUpdate(); // ✅ Prevent interaction timeout
+
     try {
       if (session.starforcedPromptId) {
         const msg = await interaction.channel.messages.fetch(session.starforcedPromptId);
         if (msg) await msg.delete();
       }
     } catch {}
+
 
     try {
       const imageBuffer = fs.readFileSync(session.imagePath);

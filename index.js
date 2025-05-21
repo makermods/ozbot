@@ -5,19 +5,21 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  Events
+  Events,
+  Partials
 } = require('discord.js');
-const { analyzeFlame } = require('./flamescore');
 const fs = require('fs');
 const path = require('path');
 const fetch = require('node-fetch');
+const { analyzeFlame } = require('./flamescore');
 
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent
-  ]
+  ],
+  partials: [Partials.Message, Partials.Channel]
 });
 
 const CHANNEL_ID = process.env.CHANNEL_ID;
@@ -29,7 +31,7 @@ client.once('ready', () => {
 });
 
 client.on(Events.MessageCreate, async (message) => {
-  if (message.author.bot || String(message.channel.id) !== String(CHANNEL_ID)) return;
+  if (message.author.bot || message.channel.id !== CHANNEL_ID) return;
   if (!message.attachments.size) return;
 
   const attachment = message.attachments.first();
@@ -50,7 +52,10 @@ client.on(Events.MessageCreate, async (message) => {
         .setStyle(ButtonStyle.Primary)
     ));
 
-  const prompt = await message.reply({ content: 'What is your main stat?', components: [row] });
+  const prompt = await message.reply({
+    content: 'What is your main stat?',
+    components: [row]
+  });
 
   userSessions.set(message.author.id, {
     step: 'main',
@@ -84,10 +89,12 @@ client.on(Events.InteractionCreate, async (interaction) => {
           .setStyle(ButtonStyle.Secondary)
       ));
 
-    await interaction.update({ content: 'What is your secondary stat?', components: [row] });
-  }
-
-  else if (step === 'sub') {
+    await interaction.update({
+      content: 'What is your secondary stat?',
+      components: [row],
+      ephemeral: false
+    });
+  } else if (step === 'sub') {
     session.sub = value;
     session.step = 'starforced';
 
@@ -97,42 +104,41 @@ client.on(Events.InteractionCreate, async (interaction) => {
         new ButtonBuilder().setCustomId('starforced_no').setLabel('No').setStyle(ButtonStyle.Danger)
       ]);
 
-    await interaction.update({ content: 'Is your item starforced?', components: [row] });
-  }
-
-  else if (step === 'starforced') {
+    await interaction.update({
+      content: 'Is your item starforced?',
+      components: [row],
+      ephemeral: false
+    });
+  } else if (step === 'starforced') {
     const isStarforced = value === 'yes';
-
-    // ⏳ Defer the interaction to avoid timeout errors
-    await interaction.deferUpdate();
-
     const imageBuffer = fs.readFileSync(session.imagePath);
     const result = await analyzeFlame(imageBuffer, session.main, session.sub, isStarforced);
 
     const { stats, tiers, flameScore, mainStat, subStat, useMagic } = result;
 
     const statLine = `Main Stat: ${stats[mainStat]} | Sub Stat: ${stats[subStat]}` +
-                     `${useMagic ? ` | MATT: ${stats.magic}` : ` | ATK: ${stats.attack}`} | All Stat%: ${stats.allStatPercent}`;
+      `${useMagic ? ` | MATT: ${stats.magic}` : ` | ATK: ${stats.attack}`} | All Stat%: ${stats.allStatPercent} | Boss Damage: ${stats.boss}%`;
+
     const tierLine = tiers.join(', ');
     const scoreLine = `**Flame Score:** ${flameScore} (${mainStat})`;
 
-    // 📤 Send the final result as a new message
-    const replyMessage = await interaction.channel.send({
-      content: `**Flame Stats:**\n${statLine}\n\n**Flame Tier:**\n${tierLine}\n\n${scoreLine}`
+    const reply = await interaction.update({
+      content: `**Flame Stats:**\n${statLine}\n\n**Flame Tier:**\n${tierLine}\n\n${scoreLine}`,
+      components: []
     });
 
-    // 🧹 Delete everything after 60 seconds
+    // Cleanup after 60 seconds
     setTimeout(async () => {
       try {
-        const msg = await interaction.channel.messages.fetch(replyMessage.id);
+        const msg = await interaction.channel.messages.fetch(reply.id);
         if (msg) await msg.delete();
         const userMsg = await interaction.channel.messages.fetch(session.originalImageId);
         if (userMsg) await userMsg.delete();
-      } catch {}
-    }, 60000);
+      } catch { }
 
-    fs.unlinkSync(session.imagePath);
-    userSessions.delete(interaction.user.id);
+      if (fs.existsSync(session.imagePath)) fs.unlinkSync(session.imagePath);
+      userSessions.delete(interaction.user.id);
+    }, 60000);
   }
 });
 

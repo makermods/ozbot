@@ -1,5 +1,7 @@
+
 const Tesseract = require('tesseract.js');
 
+// Typical flame tier values for level 160+ gear
 const FLAME_TIERS = {
   stat: [4, 8, 12, 16, 20, 24, 28],
   attack: [2, 4, 6, 8, 10, 12, 14],
@@ -18,51 +20,37 @@ function getTier(value, table) {
   return 0;
 }
 
-async function extractStats(imageBuffer, starforced) {
+async function extractStats(imageBuffer) {
   const { data: { text } } = await Tesseract.recognize(imageBuffer, 'eng', {
-    tessedit_char_whitelist: '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ:+% ',
+    tessedit_char_whitelist: '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ:+% ()'
   });
-
-  console.log('--- OCR TEXT ---');
-  console.log(text);
 
   const result = {
     stats: {
       STR: 0, DEX: 0, INT: 0, LUK: 0, HP: 0,
       attack: 0, magic: 0, boss: 0, allStatPercent: 0,
-      weaponType: '', baseAttack: null
+      weaponType: ''
     },
     text: text
   };
 
   const lines = text.split('\n');
 
-  const extractFlame = (line) => {
-    const values = line.match(/\d+/g)?.map(Number);
-    if (!values) return 0;
-    if (starforced && values.length === 3) return values[1]; // middle = flame
-    if (!starforced && values.length === 2) return values[1]; // second = flame
-    return 0;
-  };
-
   for (let line of lines) {
     line = line.trim();
 
-    if (/STR[: ]?\+?/i.test(line)) result.stats.STR = extractFlame(line);
-    if (/DEX[: ]?\+?/i.test(line)) result.stats.DEX = extractFlame(line);
-    if (/INT[: ]?\+?/i.test(line)) result.stats.INT = extractFlame(line);
-    if (/LUK[: ]?\+?/i.test(line)) result.stats.LUK = extractFlame(line);
-    if (/HP[: ]?\+?/i.test(line)) result.stats.HP = extractFlame(line);
-    if (/Attack Power|ower/i.test(line)) result.stats.attack = extractFlame(line);
-    if (/Magic Attack/i.test(line)) result.stats.magic = extractFlame(line);
-    if (/All Stats?:?\s*\+?\d+%/i.test(line)) result.stats.allStatPercent = extractFlame(line);
-    if (/Boss Damage|amage/i.test(line)) result.stats.boss = extractFlame(line);
+    if (/STR\s*[:=]\s*\+(\d+)/i.test(line)) result.stats.STR = parseInt(line.match(/STR\s*[:=]\s*\+(\d+)/i)[1]);
+    if (/DEX\s*[:=]\s*\+(\d+)/i.test(line)) result.stats.DEX = parseInt(line.match(/DEX\s*[:=]\s*\+(\d+)/i)[1]);
+    if (/INT\s*[:=]\s*\+(\d+)/i.test(line)) result.stats.INT = parseInt(line.match(/INT\s*[:=]\s*\+(\d+)/i)[1]);
+    if (/LUK\s*[:=]\s*\+(\d+)/i.test(line)) result.stats.LUK = parseInt(line.match(/LUK\s*[:=]\s*\+(\d+)/i)[1]);
+    if (/HP\s*[:=]\s*\+(\d+)/i.test(line)) result.stats.HP = parseInt(line.match(/HP\s*[:=]\s*\+(\d+)/i)[1]);
 
-    const typeMatch = line.match(/Type[: ]?(.+)/i) || line.match(/ype[: ]?(.+)/i);
-    if (typeMatch) result.stats.weaponType = typeMatch[1];
+    if (/Attack Power\s*[:=]\s*\+(\d+)/i.test(line)) result.stats.attack = parseInt(line.match(/Attack Power\s*[:=]\s*\+(\d+)/i)[1]);
+    if (/Magic Attack\s*[:=]\s*\+(\d+)/i.test(line)) result.stats.magic = parseInt(line.match(/Magic Attack\s*[:=]\s*\+(\d+)/i)[1]);
+    if (/All Stats\s*[:=]\s*\+(\d+)%/i.test(line)) result.stats.allStatPercent = parseInt(line.match(/All Stats\s*[:=]\s*\+(\d+)%/i)[1]);
+    if (/Boss Damage\s*[:=]?\s*\+(\d+)%/i.test(line)) result.stats.boss = parseInt(line.match(/Boss Damage\s*[:=]?\s*\+(\d+)%/i)[1]);
+    if (/Type\s*[:=]\s*(.+)/i.test(line)) result.stats.weaponType = line.match(/Type\s*[:=]\s*(.+)/i)[1];
   }
-
-  console.log('Detected weapon type:', result.stats.weaponType);
 
   return result;
 }
@@ -76,26 +64,25 @@ function calculateFlameScore(stats, main, sub, useMagic) {
   let score = 0;
   score += stats[main] || 0;
   if (sub) score += Math.floor((stats[sub] || 0) / 12);
-  score += (useMagic ? stats.magic : stats.attack) * 3;
+  if (useMagic) score += stats.magic * 3;
+  else score += stats.attack * 3;
   score += stats.allStatPercent * 10;
   return score;
 }
 
 function getStatTierBreakdown(stats, main, sub, useMagic) {
   const breakdown = [];
-
   if (stats[main]) breakdown.push(`T${getTier(stats[main], FLAME_TIERS.stat)} (${main})`);
   if (sub && stats[sub]) breakdown.push(`T${getTier(stats[sub], FLAME_TIERS.stat)} (${sub})`);
   if (useMagic && stats.magic) breakdown.push(`T${getTier(stats.magic, FLAME_TIERS.attack)} (MATT)`);
   if (!useMagic && stats.attack) breakdown.push(`T${getTier(stats.attack, FLAME_TIERS.attack)} (ATK)`);
   if (stats.allStatPercent) breakdown.push(`T${getTier(stats.allStatPercent, FLAME_TIERS.allStat)} (All Stat%)`);
   if (stats.boss) breakdown.push(`T${getTier(stats.boss, FLAME_TIERS.boss)} (Boss)`);
-
   return breakdown;
 }
 
-async function analyzeFlame(imageBuffer, mainStat, subStat, starforced) {
-  const ocrResult = await extractStats(imageBuffer, starforced);
+async function analyzeFlame(imageBuffer, mainStat, subStat, isStarforced) {
+  const ocrResult = await extractStats(imageBuffer);
   const stats = ocrResult.stats;
   const useMagic = shouldUseMagicAttack(stats.weaponType);
 
@@ -108,8 +95,7 @@ async function analyzeFlame(imageBuffer, mainStat, subStat, starforced) {
     stats,
     tiers: tierBreakdown,
     mainStat,
-    subStat,
-    starforced
+    subStat
   };
 }
 

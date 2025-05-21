@@ -20,7 +20,7 @@ const client = new Client({
   ]
 });
 
-const TARGET_CHANNEL_ID = process.env.TARGET_CHANNEL_ID;
+const CHANNEL_ID = process.env.CHANNEL_ID;
 const statOptions = ['STR', 'DEX', 'INT', 'LUK', 'HP'];
 const userSessions = new Map();
 
@@ -29,7 +29,8 @@ client.once('ready', () => {
 });
 
 client.on(Events.MessageCreate, async (message) => {
-  if (message.author.bot || message.channel.id !== TARGET_CHANNEL_ID) return;
+  console.log(`[DEBUG] Received message in ${message.channel.id} from ${message.author.tag}`);
+  if (message.author.bot || String(message.channel.id) !== String(CHANNEL_ID)) return;
   if (!message.attachments.size) return;
 
   const attachment = message.attachments.first();

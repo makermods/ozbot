@@ -23,79 +23,25 @@ const LEVEL_BASED_TIERS = [
 
 const MAGE_WEAPONS = ['wand', 'staff', 'shining rod', 'fan', 'cane', 'psy-limiter'];
 
-const WEAPON_TIER_TABLES = {
-  absolab: {
-    103: [16, 23, 32, 42, 53],
-    143: [22, 32, 44, 58, 74],
-    150: [23, 33, 46, 60, 77],
-    151: [23, 34, 46, 61, 78],
-    154: [24, 34, 47, 62, 79],
-    184: [28, 41, 56, 74, 95],
-    192: [29, 43, 59, 77, 99],
-    197: [30, 44, 60, 79, 101],
-    205: [31, 46, 63, 82, 106],
-    210: [32, 47, 64, 84, 108],
-    241: [37, 54, 73, 97, 124],
-    245: [37, 54, 75, 98, 126]
-  },
-  arcane: {
-    149: [27, 40, 55, 72, 92],
-    206: [38, 55, 75, 99, 127],
-    216: [39, 58, 79, 104, 133],
-    218: [40, 58, 80, 105, 135],
-    221: [40, 59, 81, 106, 136],
-    264: [48, 70, 96, 127, 163],
-    276: [50, 73, 101, 133, 170],
-    283: [51, 75, 103, 136, 175],
-    295: [54, 78, 108, 142, 182],
-    302: [55, 80, 110, 145, 186],
-    347: [63, 92, 126, 167, 214],
-    353: [64, 94, 129, 170, 218]
-  },
-  genesis: {
-    172: [31, 46, 63, 83, 106],
-    237: [43, 63, 87, 114, 146],
-    249: [45, 66, 91, 120, 154],
-    251: [46, 67, 92, 121, 155],
-    255: [46, 68, 93, 123, 157],
-    304: [55, 81, 111, 146, 187],
-    318: [58, 84, 116, 153, 196],
-    326: [59, 87, 119, 157, 201],
-    337: [61, 89, 123, 162, 208],
-    340: [62, 90, 124, 163, 210],
-    342: [62, 91, 125, 164, 211],
-    348: [63, 92, 127, 167, 214],
-    400: [72, 106, 146, 192, 246],
-    406: [74, 108, 148, 195, 250]
-  }
+const MANUAL_LABELS = {
+  STR: 'STR',
+  DEX: 'DEX',
+  INT: 'INT',
+  LUK: 'LUK',
+  HP: 'HP',
+  attack: 'Attack Power',
+  magic: 'Magic Attack',
+  boss: 'Boss Damage',
+  allStatPercent: 'All Stats %'
 };
+
+function getManualPromptLabel(statKey) {
+  return MANUAL_LABELS[statKey] || statKey;
+}
 
 function shouldUseMagicAttack(weaponType) {
   if (!weaponType) return false;
   return MAGE_WEAPONS.some(type => weaponType.toLowerCase().includes(type));
-}
-
-function isWeaponItem(typeText) {
-  return /claw|sword|bow|dagger|staff|rod|gun|cannon|knuckle|katana|polearm|spear|crossbow|weapon/i.test(typeText);
-}
-
-function detectWeaponSet(text) {
-  const lc = text.toLowerCase();
-  if (lc.includes('absolab')) return 'absolab';
-  if (lc.includes('arcane umbra')) return 'arcane';
-  if (lc.includes('genesis')) return 'genesis';
-  return null;
-}
-
-function getWeaponTier(flame, baseAtk, category) {
-  const table = WEAPON_TIER_TABLES[category];
-  if (!table || !table[baseAtk]) return null;
-
-  const tiers = table[baseAtk];
-  for (let i = tiers.length - 1; i >= 0; i--) {
-    if (flame >= tiers[i]) return `T${i + 3}`;
-  }
-  return 'T0';
 }
 
 function calculateFlameScore(stats, main, sub, useMagic, isWeapon) {
@@ -124,25 +70,16 @@ function getTier(value, table) {
   return 0;
 }
 
-function getStatTierBreakdown(stats, main, sub, useMagic, equipLevel, isWeapon, weaponBase, weaponSet) {
+function getStatTierBreakdown(stats, main, sub, useMagic, equipLevel) {
   const breakdown = [];
   const levelBased = getLevelBasedTierTable(equipLevel);
 
   if (stats[main]) breakdown.push(`T${getTier(stats[main], levelBased)} (${main})`);
   if (sub && stats[sub]) breakdown.push(`T${getTier(stats[sub], levelBased)} (${sub})`);
-
-  if (isWeapon && weaponSet && weaponBase) {
-    const flameVal = useMagic ? stats.magic : stats.attack;
-    const tier = getWeaponTier(flameVal, weaponBase, weaponSet);
-    if (tier) breakdown.push(`${tier} (${useMagic ? 'MATT' : 'ATK'})`);
-  } else {
-    if (useMagic && stats.magic) breakdown.push(`T${getTier(stats.magic, [2, 4, 6, 8, 10, 12, 14])} (MATT)`);
-    if (!useMagic && stats.attack) breakdown.push(`T${getTier(stats.attack, [2, 4, 6, 8, 10, 12, 14])} (ATK)`);
-  }
-
+  if (useMagic && stats.magic) breakdown.push(`T${getTier(stats.magic, [2, 4, 6, 8, 10, 12, 14])} (MATT)`);
+  if (!useMagic && stats.attack) breakdown.push(`T${getTier(stats.attack, [2, 4, 6, 8, 10, 12, 14])} (ATK)`);
   if (stats.allStatPercent) breakdown.push(`T${getTier(stats.allStatPercent, FIXED_TIERS.allStat)} (All Stat%)`);
   if (stats.boss) breakdown.push(`T${getTier(stats.boss, FIXED_TIERS.boss)} (Boss)`);
-
   return breakdown;
 }
 
@@ -164,7 +101,7 @@ async function extractStats(imageBuffer, isStarforced) {
   const stats = {
     STR: 0, DEX: 0, INT: 0, LUK: 0, HP: 0,
     attack: 0, magic: 0, boss: 0, allStatPercent: 0,
-    weaponType: '', baseAttack: 0
+    weaponType: '', baseAttack: null
   };
 
   let equipLevel = 0;
@@ -172,8 +109,6 @@ async function extractStats(imageBuffer, isStarforced) {
 
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
   console.log('--- OCR TEXT ---\n' + lines.join('\n'));
-
-  const fullText = lines.join(' ').toLowerCase();
 
   const parseStatLine = (line, key) => {
     const totalMatch = line.match(/\+(\d+)/);
@@ -192,14 +127,13 @@ async function extractStats(imageBuffer, isStarforced) {
     if (values.length === 3 && totalMatch) {
       const total = parseInt(totalMatch[1]);
       const [base, flame, enhancement] = values;
+
       if (base + flame + enhancement === total) {
         stats[key] = flame;
-        if (key === 'attack' || key === 'magic') stats.baseAttack = base;
       } else {
-        const corrected = total - base - enhancement;
-        if (corrected >= 0 && corrected <= 999) {
-          stats[key] = corrected;
-          if (key === 'attack' || key === 'magic') stats.baseAttack = base;
+        const correctedFlame = total - base - enhancement;
+        if (correctedFlame >= 0 && correctedFlame <= 999) {
+          stats[key] = correctedFlame;
         } else {
           stats[key] = 0;
           manualInputRequired.push(key);
@@ -213,13 +147,13 @@ async function extractStats(imageBuffer, isStarforced) {
   for (const line of lines) {
     if (/STR/i.test(line)) parseStatLine(line, 'STR');
     else if (/DEX/i.test(line)) parseStatLine(line, 'DEX');
-    else if (/INT/i.test(line)) parseStatLine(line, 'INT');
+    else if (/\bI?NT\b/i.test(line)) parseStatLine(line, 'INT');
     else if (/LUK/i.test(line)) parseStatLine(line, 'LUK');
     else if (/Max.*HP/i.test(line)) parseStatLine(line, 'HP');
     else if (/Attack Power|AllackPower/i.test(line)) parseStatLine(line, 'attack');
     else if (/Magic Attack/i.test(line)) parseStatLine(line, 'magic');
     else if (/All Stats/i.test(line)) parseStatLine(line, 'allStatPercent');
-    else if (/Boss Damage|BoseDamage/i.test(line)) parseStatLine(line, 'boss');
+    else if (/Boss Damage/i.test(line)) parseStatLine(line, 'boss');
     else if (/Type: (.+)/i.test(line)) {
       const match = line.match(/Type: (.+)/i);
       if (match) stats.weaponType = match[1];
@@ -230,18 +164,16 @@ async function extractStats(imageBuffer, isStarforced) {
     }
   }
 
-  const isWeapon = isWeaponItem(stats.weaponType || '');
-  const weaponSet = detectWeaponSet(fullText);
-
-  return { stats, manualInputRequired, equipLevel, isWeapon, weaponSet };
+  return { stats, manualInputRequired, equipLevel };
 }
 
 async function analyzeFlame(imageBuffer, mainStat, subStat, isStarforced) {
-  const { stats, manualInputRequired, equipLevel, isWeapon, weaponSet } = await extractStats(imageBuffer, isStarforced);
+  const { stats, manualInputRequired, equipLevel } = await extractStats(imageBuffer, isStarforced);
   const useMagic = shouldUseMagicAttack(stats.weaponType);
+  const isWeapon = /claw|sword|bow|dagger|staff|rod|gun|cannon|knuckle|katana|polearm|spear|crossbow|weapon/i.test(stats.weaponType || '');
 
   const flameScore = calculateFlameScore(stats, mainStat, subStat, useMagic, isWeapon);
-  const tierBreakdown = getStatTierBreakdown(stats, mainStat, subStat, useMagic, equipLevel, isWeapon, stats.baseAttack, weaponSet);
+  const tierBreakdown = getStatTierBreakdown(stats, mainStat, subStat, useMagic, equipLevel || 0);
 
   return {
     stats,
@@ -250,7 +182,10 @@ async function analyzeFlame(imageBuffer, mainStat, subStat, isStarforced) {
     useMagic,
     mainStat,
     subStat,
-    manualInputRequired
+    manualInputRequired: manualInputRequired.map(key => ({
+      key,
+      label: getManualPromptLabel(key)
+    }))
   };
 }
 

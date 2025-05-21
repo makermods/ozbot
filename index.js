@@ -71,11 +71,15 @@ client.on(Events.MessageCreate, async (message) => {
 
 client.on(Events.InteractionCreate, async (interaction) => {
   if (!interaction.isButton()) return;
-
   const session = userSessions.get(interaction.user.id);
   if (!session) return;
 
   const [step, value] = interaction.customId.split('_');
+
+  try {
+    const msg = await interaction.channel.messages.fetch(interaction.message.id);
+    if (msg) await msg.delete();
+  } catch {}
 
   if (step === 'main') {
     session.main = value;
@@ -89,15 +93,12 @@ client.on(Events.InteractionCreate, async (interaction) => {
           .setStyle(ButtonStyle.Secondary)
       ));
 
-    await interaction.update({
+    const prompt = await interaction.channel.send({
       content: 'What is your secondary stat?',
       components: [row]
     });
 
-    setTimeout(async () => {
-      const msg = await interaction.channel.messages.fetch(session.messageId);
-      if (msg) await msg.delete();
-    }, 2000);
+    session.messageId = prompt.id;
 
   } else if (step === 'sub') {
     session.sub = value;
@@ -109,146 +110,130 @@ client.on(Events.InteractionCreate, async (interaction) => {
         new ButtonBuilder().setCustomId('starforced_no').setLabel('No').setStyle(ButtonStyle.Danger)
       ]);
 
-    await interaction.update({
-  content: 'Is your item starforced?',
-  components: [row]
-});
+    const prompt = await interaction.channel.send({
+      content: 'Is your item starforced?',
+      components: [row]
+    });
 
-try {
-  const fetched = await interaction.channel.messages.fetch(interaction.message.id);
-  session.starforcedPromptId = fetched.id;
-} catch (err) {
-  console.warn('Could not store starforced prompt ID:', err.message);
-}
-
+    session.messageId = prompt.id;
 
   } else if (step === 'starforced') {
+    await interaction.deferReply({ ephemeral: false });
+
     const isStarforced = value === 'yes';
-    session.step = 'analyzing';
+    const imageBuffer = fs.readFileSync(session.imagePath);
+    const result = await analyzeFlame(imageBuffer, session.main, session.sub, isStarforced);
 
-    await interaction.deferUpdate(); // ✅ Prevent interaction timeout
+    if (result.manualInputRequired.length > 0) {
+      session.result = result;
+      session.pendingInputs = result.manualInputRequired;
+      session.manualStats = {};
+      const stat = result.manualInputRequired[0];
+      session.step = 'manual';
+      session.currentManual = stat;
 
-    try {
-      if (session.starforcedPromptId) {
-        const msg = await interaction.channel.messages.fetch(session.starforcedPromptId);
-        if (msg) await msg.delete();
-      }
-    } catch {}
-
-
-    try {
-      const imageBuffer = fs.readFileSync(session.imagePath);
-      const result = await analyzeFlame(imageBuffer, session.main, session.sub, isStarforced);
-
-      if (result.manualSetPrompt) {
-        const row = new ActionRowBuilder().addComponents([
-          new ButtonBuilder().setCustomId('set_absolab').setLabel('AbsoLab').setStyle(ButtonStyle.Primary),
-          new ButtonBuilder().setCustomId('set_arcane').setLabel('Arcane').setStyle(ButtonStyle.Secondary),
-          new ButtonBuilder().setCustomId('set_genesis').setLabel('Genesis').setStyle(ButtonStyle.Success),
-        ]);
-
-        const msg = await interaction.update({
-          content: 'Manual weapon detection failed. Please select your weapon set to correctly calculate flame tier:',
-          components: [row]
-        });
-
-        session.step = 'weaponSet';
-        session.tempResult = result;
-        session.tempMsgId = msg.id;
-        return;
-      }
-
-      if (result.manualInputRequired.length > 0) {
-        session.pendingStats = result.manualInputRequired;
-        session.stats = result.stats;
-        session.useMagic = result.useMagic;
-        session.flameScore = result.flameScore;
-        session.tiers = result.tiers;
-        session.mainStat = result.mainStat;
-        session.subStat = result.subStat;
-        session.isStarforced = isStarforced;
-
-        const current = session.pendingStats.shift();
-        session.awaitingStat = current.key;
-
-        const prompt = await interaction.update({
-          content: `Auto-detection failed. Please enter the flame value for ${current.label}:`,
-          components: []
-        });
-
-        session.promptId = prompt.id;
-        return;
-      }
-
-      await postFlameResult(interaction, result, session, isStarforced);
-    } catch (error) {
-      console.error('[analyzeFlame ERROR]', error);
-      await interaction.reply({
-        content: 'An error occurred while analyzing the image.',
-        ephemeral: true
+      const promptMsg = await interaction.followUp({
+        content: `Auto-detection failed. Please enter the flame value for **${stat.label}**:`,
+        ephemeral: false
       });
+
+      session.lastPromptId = promptMsg.id;
+      return;
     }
+
+    const { stats, tiers, flameScore, mainStat, subStat, useMagic } = result;
+
+    const statLine = `Main Stat: ${stats[mainStat]} | Sub Stat: ${stats[subStat]}` +
+      `${useMagic ? ` | MATT: ${stats.magic}` : ` | ATK: ${stats.attack}`} | All Stat%: ${stats.allStatPercent} | Boss Damage: ${stats.boss}%`;
+
+    const tierLine = tiers.join(', ');
+    const scoreLine = `**Flame Score:** ${flameScore} (${mainStat})`;
+
+    const resultMsg = await interaction.followUp({
+      content: `**Flame Stats:**
+${statLine}
+
+**Flame Tier:**
+${tierLine}
+
+${scoreLine}`,
+      ephemeral: false
+    });
+
+    setTimeout(async () => {
+      try {
+        const msg = await interaction.channel.messages.fetch(resultMsg.id);
+        if (msg) await msg.delete();
+        const userMsg = await interaction.channel.messages.fetch(session.originalImageId);
+        if (userMsg) await userMsg.delete();
+      } catch {}
+      if (fs.existsSync(session.imagePath)) fs.unlinkSync(session.imagePath);
+      userSessions.delete(interaction.user.id);
+    }, 30000);
   }
 });
+
 client.on(Events.MessageCreate, async (message) => {
-  if (!userSessions.has(message.author.id)) return;
   const session = userSessions.get(message.author.id);
-  if (!session.awaitingStat) return;
+  if (!session || session.step !== 'manual') return;
 
+  const statKey = session.currentManual.key;
   const value = parseInt(message.content);
-  if (!isNaN(value)) {
-    session.stats[session.awaitingStat] = value;
-    setTimeout(() => message.delete().catch(() => {}), 2000);
 
-    if (session.pendingStats.length > 0) {
-      const current = session.pendingStats.shift();
-      session.awaitingStat = current.key;
-      const prompt = await message.channel.send(`Auto-detection failed. Please enter the flame value for ${current.label}:`);
-      setTimeout(() => prompt.delete().catch(() => {}), 2000);
-    } else {
-      session.awaitingStat = null;
-      const result = {
-        stats: session.stats,
-        flameScore: session.flameScore,
-        tiers: session.tiers,
-        useMagic: session.useMagic,
-        mainStat: session.mainStat,
-        subStat: session.subStat
-      };
-      const fakeInteraction = {
-        channel: message.channel,
-        reply: (options) => message.channel.send(options)
-      };
-      await postFlameResult(fakeInteraction, result, session, session.isStarforced);
-    }
+  if (isNaN(value)) {
+    await message.reply({ content: 'Please enter a valid number.', ephemeral: true });
+    return;
   }
-});
 
-async function postFlameResult(interaction, result, session, isStarforced) {
-  const { stats, tiers, flameScore, mainStat, subStat, useMagic } = result;
-
-  const statLine = `Main Stat: ${stats[mainStat]} | Sub Stat: ${stats[subStat]}` +
-    `${useMagic ? ` | MATT: ${stats.magic}` : ` | ATK: ${stats.attack}`} | All Stat%: ${stats.allStatPercent} | Boss Damage: ${stats.boss}%`;
-
-  const tierLine = tiers.join(', ');
-  const scoreLine = `**Flame Score:** ${flameScore} (${mainStat})`;
-
-  const reply = await interaction.reply({
-    content: `**Flame Stats:**\n${statLine}\n\n**Flame Tier:**\n${tierLine}\n\n${scoreLine}`,
-    ephemeral: false
-  });
+  session.manualStats[statKey] = value;
+  const nextIndex = session.pendingInputs.findIndex(s => s.key === statKey) + 1;
 
   setTimeout(async () => {
     try {
-      const msg = await interaction.channel.messages.fetch(reply.id);
-      if (msg) await msg.delete();
-      const userMsg = await interaction.channel.messages.fetch(session.originalImageId);
-      if (userMsg) await userMsg.delete();
+      const prompt = await message.channel.messages.fetch(session.lastPromptId);
+      if (prompt) await prompt.delete();
+      await message.delete();
     } catch {}
+  }, 2000);
 
-    if (fs.existsSync(session.imagePath)) fs.unlinkSync(session.imagePath);
-    userSessions.delete(interaction.user.id);
-  }, 30000);
-}
+  if (nextIndex < session.pendingInputs.length) {
+    const nextStat = session.pendingInputs[nextIndex];
+    session.currentManual = nextStat;
+
+    const nextPrompt = await message.channel.send({
+      content: `Please enter the flame value for **${nextStat.label}**:`
+    });
+
+    session.lastPromptId = nextPrompt.id;
+  } else {
+    const result = session.result;
+    const stats = { ...result.stats, ...session.manualStats };
+    const statLine = `Main Stat: ${stats[result.mainStat]} | Sub Stat: ${stats[result.subStat]}` +
+      `${result.useMagic ? ` | MATT: ${stats.magic}` : ` | ATK: ${stats.attack}`} | All Stat%: ${stats.allStatPercent} | Boss Damage: ${stats.boss}%`;
+
+    const tierLine = result.tiers.join(', ');
+    const scoreLine = `**Flame Score:** ${result.flameScore} (${result.mainStat})`;
+
+    const reply = await message.channel.send({
+      content: `**Flame Stats:**
+${statLine}
+
+**Flame Tier:**
+${tierLine}
+
+${scoreLine}`
+    });
+
+    setTimeout(async () => {
+      try {
+        const userMsg = await message.channel.messages.fetch(session.originalImageId);
+        if (userMsg) await userMsg.delete();
+        if (reply) await reply.delete();
+      } catch {}
+      if (fs.existsSync(session.imagePath)) fs.unlinkSync(session.imagePath);
+      userSessions.delete(message.author.id);
+    }, 30000);
+  }
+});
 
 client.login(process.env.DISCORD_TOKEN);

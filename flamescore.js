@@ -136,7 +136,7 @@ async function extractStats(imageBuffer, isStarforced) {
   const fullText = lines.join(' ').toLowerCase();
 
   const parseStatLine = (line, key) => {
-    const match = line.match(/\+(\d+).*?\(([^)]+)\)/);
+    const match = line.match(/\+(\d+)[^\\(]*\(([^)]+)\)/);
     if (!match) return;
     const total = parseInt(match[1]);
     const values = match[2].match(/\d+/g)?.map(Number) || [];
@@ -161,14 +161,20 @@ async function extractStats(imageBuffer, isStarforced) {
     else if (lc.includes('luk') && lc.includes('+')) parseStatLine(line, 'LUK');
     else if ((lc.includes('maxhp') || lc.includes('max hp')) && lc.includes('+')) parseStatLine(line, 'HP');
     else if (lc.includes('attack power') && lc.includes('+')) {
+      console.log('[Matched Attack Power Line]', line);
       parseStatLine(line, 'attack');
       const base = line.match(/\((\d+) \+ \d+/);
       if (base) stats.baseAttack = parseInt(base[1]);
-    } else if (lc.includes('magic attack') && lc.includes('+')) {
+      console.log('[Parsed Attack]', stats.attack);
+    }
+    else if (lc.includes('magic attack') && lc.includes('+')) {
+      console.log('[Matched Magic Attack Line]', line);
       parseStatLine(line, 'magic');
       const base = line.match(/\((\d+) \+ \d+/);
       if (base) stats.baseAttack = parseInt(base[1]);
-    } else if (lc.includes('all stats') && lc.includes('+')) parseStatLine(line, 'allStatPercent');
+      console.log('[Parsed Magic]', stats.magic);
+    }
+    else if (lc.includes('all stats') && lc.includes('+')) parseStatLine(line, 'allStatPercent');
     else if (lc.includes('boss damage') && lc.includes('+')) parseStatLine(line, 'boss');
     else if (/Type: (.+)/i.test(line)) {
       const match = line.match(/Type: (.+)/i);

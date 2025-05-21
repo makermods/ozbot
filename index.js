@@ -107,11 +107,14 @@ client.on(Events.InteractionCreate, async (interaction) => {
         new ButtonBuilder().setCustomId('starforced_no').setLabel('No').setStyle(ButtonStyle.Danger)
       ]);
 
+    // Save ID of third prompt message for cleanup
     await interaction.update({
       content: 'Is your item starforced?',
       components: [row],
       ephemeral: false
     });
+
+    session.starforcedPromptId = interaction.message.id;
 
   } else if (customId.startsWith('starforced_')) {
     const value = customId.split('_')[1];
@@ -138,10 +141,14 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
       setTimeout(async () => {
         try {
-          const msg = await interaction.channel.messages.fetch(followup.id);
-          if (msg) await msg.delete();
+          const reply = await interaction.channel.messages.fetch(followup.id);
+          if (reply) await reply.delete();
+
           const userMsg = await interaction.channel.messages.fetch(session.originalImageId);
           if (userMsg) await userMsg.delete();
+
+          const starPrompt = await interaction.channel.messages.fetch(session.starforcedPromptId);
+          if (starPrompt) await starPrompt.delete();
         } catch (err) {
           console.warn('Cleanup error:', err.message);
         }

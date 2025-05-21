@@ -112,19 +112,19 @@ client.on(Events.InteractionCreate, async (interaction) => {
     });
 
   } else if (step === 'starforced') {
+    await interaction.deferReply({ ephemeral: false }); // ✅ Fixes "this interaction failed"
+
     const isStarforced = value === 'yes';
     const imageBuffer = fs.readFileSync(session.imagePath);
     const result = await analyzeFlame(imageBuffer, session.main, session.sub, isStarforced);
 
     const { stats, tiers, flameScore, mainStat, subStat, useMagic, manualInputRequired } = result;
 
-    // Immediately delete the "starforced" prompt message
     try {
       const msg = await interaction.channel.messages.fetch(interaction.message.id);
       if (msg) await msg.delete();
     } catch (e) { }
 
-    // If manual input is required for any stat
     if (manualInputRequired.length > 0) {
       session.result = result;
       session.pendingInputs = manualInputRequired;
@@ -142,7 +142,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
       return;
     }
 
-    // If all stats were detected correctly
     const statLine = `Main Stat: ${stats[mainStat]} | Sub Stat: ${stats[subStat]}` +
       `${useMagic ? ` | MATT: ${stats.magic}` : ` | ATK: ${stats.attack}`} | All Stat%: ${stats.allStatPercent} | Boss Damage: ${stats.boss}%`;
 

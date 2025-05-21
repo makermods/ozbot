@@ -29,7 +29,6 @@ client.once('ready', () => {
 });
 
 client.on(Events.MessageCreate, async (message) => {
-  console.log(`[DEBUG] Received message in ${message.channel.id} from ${message.author.tag}`);
   if (message.author.bot || String(message.channel.id) !== String(CHANNEL_ID)) return;
   if (!message.attachments.size) return;
 
@@ -103,6 +102,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
   else if (step === 'starforced') {
     const isStarforced = value === 'yes';
+
+    // ⏳ Defer the interaction to avoid timeout errors
+    await interaction.deferUpdate();
+
     const imageBuffer = fs.readFileSync(session.imagePath);
     const result = await analyzeFlame(imageBuffer, session.main, session.sub, isStarforced);
 
@@ -113,15 +116,15 @@ client.on(Events.InteractionCreate, async (interaction) => {
     const tierLine = tiers.join(', ');
     const scoreLine = `**Flame Score:** ${flameScore} (${mainStat})`;
 
-    const reply = await interaction.update({
-      content: `**Flame Stats:**\n${statLine}\n\n**Flame Tier:**\n${tierLine}\n\n${scoreLine}`,
-      components: []
+    // 📤 Send the final result as a new message
+    const replyMessage = await interaction.channel.send({
+      content: `**Flame Stats:**\n${statLine}\n\n**Flame Tier:**\n${tierLine}\n\n${scoreLine}`
     });
 
-    // Cleanup messages after 60s
+    // 🧹 Delete everything after 60 seconds
     setTimeout(async () => {
       try {
-        const msg = await interaction.channel.messages.fetch(reply.id);
+        const msg = await interaction.channel.messages.fetch(replyMessage.id);
         if (msg) await msg.delete();
         const userMsg = await interaction.channel.messages.fetch(session.originalImageId);
         if (userMsg) await userMsg.delete();

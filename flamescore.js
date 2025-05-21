@@ -136,15 +136,15 @@ async function extractStats(imageBuffer, isStarforced) {
   const fullText = lines.join(' ').toLowerCase();
 
   const parseStatLine = (line, key) => {
-    const match = line.match(/\+(\d+)[^\\(]*\(([^)]+)\)/);
+    const match = line.match(/\+\d+[^\(]*\(([^)]+)\)/);
     if (!match) return;
-    const total = parseInt(match[1]);
-    const values = match[2].match(/\d+/g)?.map(Number) || [];
+
+    const values = match[1].match(/\d+/g)?.map(Number) || [];
 
     if (values.length === 3 && isStarforced) {
-      const [base, flame, enhance] = values;
-      if (base + flame + enhance === total) stats[key] = flame;
-      else stats[key] = Math.max(0, total - base - enhance);
+      stats[key] = values[1]; // middle value is flame
+    } else if (values.length === 2 && isStarforced) {
+      stats[key] = 0; // enhanced but no flame present
     } else if (values.length >= 2) {
       stats[key] = values[1];
     } else {

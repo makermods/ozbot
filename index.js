@@ -109,12 +109,18 @@ client.on(Events.InteractionCreate, async (interaction) => {
         new ButtonBuilder().setCustomId('starforced_no').setLabel('No').setStyle(ButtonStyle.Danger)
       ]);
 
-    const prompt = await interaction.update({
-      content: 'Is your item starforced?',
-      components: [row]
-    });
+    await interaction.update({
+  content: 'Is your item starforced?',
+  components: [row]
+});
 
-    session.starforcedPromptId = prompt.id;
+try {
+  const fetched = await interaction.channel.messages.fetch(interaction.message.id);
+  session.starforcedPromptId = fetched.id;
+} catch (err) {
+  console.warn('Could not store starforced prompt ID:', err.message);
+}
+
 
   } else if (step === 'starforced') {
     const isStarforced = value === 'yes';

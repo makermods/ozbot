@@ -46,7 +46,6 @@ function getStatTierBreakdown(stats, main, sub, useMagic) {
 async function extractStats(imageBuffer, isStarforced) {
   const image = await Jimp.read(imageBuffer);
 
-  // Resize and preprocess
   image
     .resize(image.bitmap.width * 2, image.bitmap.height * 2)
     .grayscale()
@@ -68,25 +67,43 @@ async function extractStats(imageBuffer, isStarforced) {
     weaponType: '', baseAttack: null
   };
 
+  const manualInputRequired = [];
+
   const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
   console.log('--- OCR TEXT ---\n' + lines.join('\n'));
 
   const parseStatLine = (line, key, isPercent = false) => {
-    const numbers = line.match(/\+(\d+)%?/g)?.map(n => parseInt(n.replace(/\+|%/g, ''))) || [];
+    const totalMatch = line.match(/\+(\d+)/); // total stat value (from +225)
+    const values = line.match(/\((.*?)\)/)?.[1]?.match(/\d+/g)?.map(Number) || [];
 
     if (['boss', 'allStatPercent'].includes(key)) {
-      // Always use second value if available
-      stats[key] = numbers.length >= 2 ? numbers[1] : 0;
-    } else {
-      if (isStarforced) {
-        if (numbers.length === 3) {
-          stats[key] = numbers[1]; // middle value is flame
-        } else {
-          stats[key] = 0; // not a flame stat, only base + enhancement
-        }
+      stats[key] = values[1] ?? 0;
+      return;
+    }
+
+    if (!isStarforced) {
+      stats[key] = values[1] ?? 0; // non-enhanced → second number = flame
+      return;
+    }
+
+    if (values.length === 3 && totalMatch) {
+      const total = parseInt(totalMatch[1]);
+      const [base, flame, enhancement] = values;
+
+      if (base + flame + enhancement === total) {
+        stats[key] = flame;
       } else {
-        stats[key] = numbers[numbers.length - 1] ?? 0; // last value is flame
+        const correctedFlame = total - base - enhancement;
+        if (correctedFlame >= 0 && correctedFlame <= 999) {
+          stats[key] = correctedFlame;
+        } else {
+          stats[key] = 0;
+          manualInputRequired.push(key);
+        }
       }
+    } else {
+      // 2 or fewer values — assume it's base + enhancement only
+      stats[key] = 0;
     }
   };
 
@@ -106,11 +123,11 @@ async function extractStats(imageBuffer, isStarforced) {
     }
   }
 
-  return stats;
+  return { stats, manualInputRequired };
 }
 
 async function analyzeFlame(imageBuffer, mainStat, subStat, isStarforced) {
-  const stats = await extractStats(imageBuffer, isStarforced);
+  const { stats, manualInputRequired } = await extractStats(imageBuffer, isStarforced);
   const useMagic = shouldUseMagicAttack(stats.weaponType);
 
   const flameScore = calculateFlameScore(stats, mainStat, subStat, useMagic);
@@ -122,7 +139,8 @@ async function analyzeFlame(imageBuffer, mainStat, subStat, isStarforced) {
     tiers: tierBreakdown,
     useMagic,
     mainStat,
-    subStat
+    subStat,
+    manualInputRequired
   };
 }
 

@@ -26,6 +26,41 @@ const CHANNEL_ID = process.env.CHANNEL_ID;
 const statOptions = ['STR', 'DEX', 'INT', 'LUK', 'HP'];
 const userSessions = new Map();
 
+function calculateFlameScore(stats, main, sub, useMagic) {
+  let score = 0;
+  score += stats[main] || 0;
+  if (sub) score += Math.floor((stats[sub] || 0) / 12);
+  if (useMagic) score += (stats.magic || 0) * 3;
+  else score += (stats.attack || 0) * 3;
+  score += (stats.allStatPercent || 0) * 10;
+  return score;
+}
+
+function getStatTierBreakdown(stats, main, sub, useMagic) {
+  const tiers = [];
+  const getTier = (value, table) => {
+    for (let i = table.length - 1; i >= 0; i--) {
+      if (value >= table[i]) return i + 1;
+    }
+    return 0;
+  };
+
+  const FLAME_TIERS = {
+    stat: [4, 8, 12, 16, 20, 24, 28],
+    attack: [2, 4, 6, 8, 10, 12, 14],
+    allStat: [1, 2, 3, 4, 5, 6, 7],
+    boss: [2, 4, 6, 8, 10, 12, 14]
+  };
+
+  if (stats[main]) tiers.push(`T${getTier(stats[main], FLAME_TIERS.stat)} (${main})`);
+  if (sub && stats[sub]) tiers.push(`T${getTier(stats[sub], FLAME_TIERS.stat)} (${sub})`);
+  if (useMagic && stats.magic) tiers.push(`T${getTier(stats.magic, FLAME_TIERS.attack)} (MATT)`);
+  if (!useMagic && stats.attack) tiers.push(`T${getTier(stats.attack, FLAME_TIERS.attack)} (ATK)`);
+  if (stats.allStatPercent) tiers.push(`T${getTier(stats.allStatPercent, FLAME_TIERS.allStat)} (All Stat%)`);
+  if (stats.boss) tiers.push(`T${getTier(stats.boss, FLAME_TIERS.boss)} (Boss)`);
+  return tiers;
+}
+
 client.once('ready', () => {
   console.log(`Logged in as ${client.user.tag}`);
 });
@@ -121,13 +156,85 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
     try {
       await interaction.deferUpdate();
-      await interaction.message.delete(); // 💥 instantly delete starforced prompt
+      await interaction.message.delete();
 
       const imageBuffer = fs.readFileSync(session.imagePath);
       const result = await analyzeFlame(imageBuffer, session.main, session.sub, isStarforced);
+      const { stats, tiers, flameScore, mainStat, subStat, useMagic, manualInputRequired } = result;
 
-      const { stats, tiers, flameScore, mainStat, subStat, useMagic } = result;
+      if (manualInputRequired.length > 0) {
+        session.stats = stats;
+        session.manualQueue = [...manualInputRequired];
+        session.manualIndex = 0;
+        session.isStarforced = isStarforced;
 
+        const askNextStat = async () => {
+          const stat = session.manualQueue[session.manualIndex];
+          await interaction.followUp({
+            content: `Auto-detection failed. Please enter the flame value for **${stat}**:`,
+            ephemeral: true
+          });
+
+          const collector = interaction.channel.createMessageCollector({
+            filter: m => m.author.id === interaction.user.id,
+            max: 1,
+            time: 30000
+          });
+
+          collector.on('collect', async msg => {
+            const value = parseInt(msg.content.trim());
+            if (isNaN(value) || value < 0 || value > 999) {
+              await msg.reply({ content: '❌ Invalid value. Please enter a number between 0 and 999.', ephemeral: true });
+              return;
+            }
+
+            session.stats[stat] = value;
+            session.manualIndex++;
+
+            if (session.manualIndex < session.manualQueue.length) {
+              askNextStat(); // Ask for next
+            } else {
+              const useMagic = session.stats.weaponType && ['wand', 'staff', 'shining rod', 'fan', 'cane', 'psy-limiter'].some(w => session.stats.weaponType.toLowerCase().includes(w));
+              const flameScore = calculateFlameScore(session.stats, session.main, session.sub, useMagic);
+              const tiers = getStatTierBreakdown(session.stats, session.main, session.sub, useMagic);
+
+              const statLine = `Main Stat: ${session.stats[session.main]} | Sub Stat: ${session.stats[session.sub]}` +
+                `${useMagic ? ` | MATT: ${session.stats.magic}` : ` | ATK: ${session.stats.attack}`} | All Stat%: ${session.stats.allStatPercent} | Boss Damage: ${session.stats.boss}%`;
+
+              const tierLine = tiers.join(', ');
+              const scoreLine = `**Flame Score:** ${flameScore} (${session.main})`;
+
+              const resultMsg = await msg.reply({
+                content: `**Flame Stats:**\n${statLine}\n\n**Flame Tier:**\n${tierLine}\n\n${scoreLine}`
+              });
+
+              setTimeout(async () => {
+                try {
+                  await resultMsg.delete();
+                  await msg.delete();
+                  const userMsg = await interaction.channel.messages.fetch(session.originalImageId);
+                  if (userMsg) await userMsg.delete();
+                } catch {}
+                if (fs.existsSync(session.imagePath)) fs.unlinkSync(session.imagePath);
+                userSessions.delete(interaction.user.id);
+              }, 60000);
+            }
+          });
+
+          collector.on('end', collected => {
+            if (collected.size === 0) {
+              interaction.followUp({ content: '⏱️ Timed out waiting for input.', ephemeral: true });
+              if (fs.existsSync(session.imagePath)) fs.unlinkSync(session.imagePath);
+              userSessions.delete(interaction.user.id);
+            }
+          });
+        };
+
+        await askNextStat();
+        return;
+      }
+
+      // Normal output (no manual input needed)
       const statLine = `Main Stat: ${stats[mainStat]} | Sub Stat: ${stats[subStat]}` +
         `${useMagic ? ` | MATT: ${stats.magic}` : ` | ATK: ${stats.attack}`} | All Stat%: ${stats.allStatPercent} | Boss Damage: ${stats.boss}%`;
 
@@ -141,18 +248,14 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
       setTimeout(async () => {
         try {
-          const reply = await interaction.channel.messages.fetch(followup.id);
-          if (reply) await reply.delete();
+          const msg = await interaction.channel.messages.fetch(followup.id);
+          if (msg) await msg.delete();
 
           const userMsg = await interaction.channel.messages.fetch(session.originalImageId);
           if (userMsg) await userMsg.delete();
-        } catch (err) {
-          console.warn('Cleanup error:', err.message);
-        }
+        } catch {}
 
-        if (fs.existsSync(session.imagePath)) {
-          fs.unlinkSync(session.imagePath);
-        }
+        if (fs.existsSync(session.imagePath)) fs.unlinkSync(session.imagePath);
         userSessions.delete(interaction.user.id);
       }, 60000);
 
@@ -163,13 +266,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
           content: '⚠️ Something went wrong while analyzing the image. Please try again.',
           ephemeral: true
         });
-      } catch (e) {
-        console.warn('Follow-up error:', e.message);
-      }
-
-      if (fs.existsSync(session.imagePath)) {
-        fs.unlinkSync(session.imagePath);
-      }
+      } catch {}
+      if (fs.existsSync(session.imagePath)) fs.unlinkSync(session.imagePath);
       userSessions.delete(interaction.user.id);
     }
   }

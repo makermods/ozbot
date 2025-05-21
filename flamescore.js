@@ -21,16 +21,16 @@ const LEVEL_TIERS = [
   { min: 230, max: 999, values: [12, 24, 36, 48, 60, 72, 84] }
 ];
 
-const MANUAL_LABELS = {
-  STR: 'STR', DEX: 'DEX', INT: 'INT', LUK: 'LUK', HP: 'HP',
-  attack: 'Attack Power', magic: 'Magic Attack',
-  boss: 'Boss Damage', allStatPercent: 'All Stats %'
-};
-
 const WEAPON_SETS = {
   genesis: /genesis/i,
   arcane: /arcane/i,
   absolab: /absolab/i
+};
+
+const MANUAL_LABELS = {
+  STR: 'STR', DEX: 'DEX', INT: 'INT', LUK: 'LUK', HP: 'HP',
+  attack: 'Attack Power', magic: 'Magic Attack',
+  boss: 'Boss Damage', allStatPercent: 'All Stats %'
 };
 
 function getManualPromptLabel(statKey) {
@@ -127,7 +127,12 @@ async function extractStats(imageBuffer, isStarforced) {
 
   const { data: { text } } = await Tesseract.recognize(await image.getBufferAsync(Jimp.MIME_PNG), 'eng');
 
-  const stats = { STR: 0, DEX: 0, INT: 0, LUK: 0, HP: 0, attack: 0, magic: 0, boss: 0, allStatPercent: 0, weaponType: '', baseAttack: 0 };
+  const stats = {
+    STR: 0, DEX: 0, INT: 0, LUK: 0, HP: 0,
+    attack: 0, magic: 0, boss: 0, allStatPercent: 0,
+    weaponType: '', baseAttack: 0
+  };
+
   let equipLevel = 0;
   const manualInputRequired = [];
 
@@ -141,12 +146,17 @@ async function extractStats(imageBuffer, isStarforced) {
 
     const values = match[1].match(/\d+/g)?.map(Number) || [];
 
+    if (['boss', 'allStatPercent'].includes(key)) {
+      stats[key] = values[1] ?? 0;
+      return;
+    }
+
     if (values.length === 3 && isStarforced) {
-      stats[key] = values[1]; // middle value is flame
+      stats[key] = values[1]; // flame value
     } else if (values.length === 2 && isStarforced) {
-      stats[key] = 0; // enhanced but no flame present
+      stats[key] = 0; // no flame present, just base + enhancement
     } else if (values.length >= 2) {
-      stats[key] = values[1];
+      stats[key] = values[1]; // unenhanced flame value
     } else {
       stats[key] = 0;
       manualInputRequired.push(key);
@@ -166,15 +176,13 @@ async function extractStats(imageBuffer, isStarforced) {
       const base = line.match(/\((\d+) \+ \d+/);
       if (base) stats.baseAttack = parseInt(base[1]);
       console.log('[Parsed Attack]', stats.attack);
-    }
-    else if (lc.includes('magic attack') && lc.includes('+')) {
+    } else if (lc.includes('magic attack') && lc.includes('+')) {
       console.log('[Matched Magic Attack Line]', line);
       parseStatLine(line, 'magic');
       const base = line.match(/\((\d+) \+ \d+/);
       if (base) stats.baseAttack = parseInt(base[1]);
       console.log('[Parsed Magic]', stats.magic);
-    }
-    else if (lc.includes('all stats') && lc.includes('+')) parseStatLine(line, 'allStatPercent');
+    } else if (lc.includes('all stats') && lc.includes('+')) parseStatLine(line, 'allStatPercent');
     else if (lc.includes('boss damage') && lc.includes('+')) parseStatLine(line, 'boss');
     else if (/Type: (.+)/i.test(line)) {
       const match = line.match(/Type: (.+)/i);

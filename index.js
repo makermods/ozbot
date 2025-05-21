@@ -115,14 +115,18 @@ client.on(Events.InteractionCreate, async (interaction) => {
       components: [row]
     });
 
-    setTimeout(async () => {
-      const msg = await interaction.channel.messages.fetch(prompt.id);
-      if (msg) await msg.delete();
-    }, 2000);
+    session.starforcedPromptId = prompt.id;
 
-  } else if (step === 'starforced') {
+      } else if (step === 'starforced') {
     const isStarforced = value === 'yes';
     session.step = 'analyzing';
+
+    if (session.starforcedPromptId) {
+      try {
+        const msg = await interaction.channel.messages.fetch(session.starforcedPromptId);
+        if (msg) await msg.delete();
+      } catch {}
+    }
 
     const imageBuffer = fs.readFileSync(session.imagePath);
     const result = await analyzeFlame(imageBuffer, session.main, session.sub, isStarforced);
@@ -228,13 +232,7 @@ async function postFlameResult(interaction, result, session, isStarforced) {
   const scoreLine = `**Flame Score:** ${flameScore} (${mainStat})`;
 
   const reply = await interaction.reply({
-    content: `**Flame Stats:**
-${statLine}
-
-**Flame Tier:**
-${tierLine}
-
-${scoreLine}`,
+    content: `**Flame Stats:**\n${statLine}\n\n**Flame Tier:**\n${tierLine}\n\n${scoreLine}`,
     ephemeral: false
   });
 

@@ -1,4 +1,3 @@
-// Updated flamescore.js with OCR logging intact
 const Tesseract = require('tesseract.js');
 const Jimp = require('jimp');
 
@@ -137,14 +136,15 @@ async function extractStats(imageBuffer, isStarforced) {
   const fullText = lines.join(' ').toLowerCase();
 
   const parseStatLine = (line, key) => {
-    const match = line.match(/\+(\d+).*\(([^)]+)\)/);
+    const match = line.match(/\+(\d+).*?\(([^)]+)\)/);
     if (!match) return;
-    const [ , total ] = match;
+    const total = parseInt(match[1]);
     const values = match[2].match(/\d+/g)?.map(Number) || [];
+
     if (values.length === 3 && isStarforced) {
-      const [base, flame, enhancement] = values;
-      if (base + flame + enhancement === +total) stats[key] = flame;
-      else stats[key] = Math.max(0, +total - base - enhancement);
+      const [base, flame, enhance] = values;
+      if (base + flame + enhance === total) stats[key] = flame;
+      else stats[key] = Math.max(0, total - base - enhance);
     } else if (values.length >= 2) {
       stats[key] = values[1];
     } else {
@@ -160,9 +160,15 @@ async function extractStats(imageBuffer, isStarforced) {
     else if ((lc.includes('int') || lc.includes('nt')) && lc.includes('+')) parseStatLine(line, 'INT');
     else if (lc.includes('luk') && lc.includes('+')) parseStatLine(line, 'LUK');
     else if ((lc.includes('maxhp') || lc.includes('max hp')) && lc.includes('+')) parseStatLine(line, 'HP');
-    else if (lc.includes('attack power') && lc.includes('+')) parseStatLine(line, 'attack');
-    else if (lc.includes('magic attack') && lc.includes('+')) parseStatLine(line, 'magic');
-    else if (lc.includes('all stats') && lc.includes('+')) parseStatLine(line, 'allStatPercent');
+    else if (lc.includes('attack power') && lc.includes('+')) {
+      parseStatLine(line, 'attack');
+      const base = line.match(/\((\d+) \+ \d+/);
+      if (base) stats.baseAttack = parseInt(base[1]);
+    } else if (lc.includes('magic attack') && lc.includes('+')) {
+      parseStatLine(line, 'magic');
+      const base = line.match(/\((\d+) \+ \d+/);
+      if (base) stats.baseAttack = parseInt(base[1]);
+    } else if (lc.includes('all stats') && lc.includes('+')) parseStatLine(line, 'allStatPercent');
     else if (lc.includes('boss damage') && lc.includes('+')) parseStatLine(line, 'boss');
     else if (/Type: (.+)/i.test(line)) {
       const match = line.match(/Type: (.+)/i);
@@ -172,14 +178,20 @@ async function extractStats(imageBuffer, isStarforced) {
     }
   }
 
-  return { stats, equipLevel, manualInputRequired, isWeapon: isWeaponType(stats.weaponType), weaponSet: detectWeaponSet(fullText) };
+  return {
+    stats,
+    equipLevel,
+    manualInputRequired,
+    isWeapon: isWeaponType(stats.weaponType),
+    weaponSet: detectWeaponSet(fullText)
+  };
 }
 
 async function analyzeFlame(imageBuffer, mainStat, subStat, isStarforced) {
   const { stats, equipLevel, manualInputRequired, isWeapon, weaponSet } = await extractStats(imageBuffer, isStarforced);
   const useMagic = shouldUseMagicAttack(stats.weaponType);
   const flameScore = calculateFlameScore(stats, mainStat, subStat, useMagic, isWeapon);
-  const tiers = getStatTierBreakdown(stats, mainStat, subStat, useMagic, equipLevel, isWeapon, weaponSet, useMagic ? stats.magic : stats.attack);
+  const tiers = getStatTierBreakdown(stats, mainStat, subStat, useMagic, equipLevel, isWeapon, weaponSet, stats.baseAttack);
 
   return {
     stats,
@@ -188,8 +200,13 @@ async function analyzeFlame(imageBuffer, mainStat, subStat, isStarforced) {
     useMagic,
     mainStat,
     subStat,
-    manualInputRequired: manualInputRequired.map(key => ({ key, label: getManualPromptLabel(key) }))
+    manualInputRequired: manualInputRequired.map(key => ({
+      key,
+      label: getManualPromptLabel(key)
+    }))
   };
 }
 
-module.exports = { analyzeFlame };
+module.exports = {
+  analyzeFlame
+};

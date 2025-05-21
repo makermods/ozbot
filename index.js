@@ -116,34 +116,58 @@ client.on(Events.InteractionCreate, async (interaction) => {
   } else if (customId.startsWith('starforced_')) {
     const value = customId.split('_')[1];
     const isStarforced = value === 'yes';
-    const imageBuffer = fs.readFileSync(session.imagePath);
-    const result = await analyzeFlame(imageBuffer, session.main, session.sub, isStarforced);
 
-    const { stats, tiers, flameScore, mainStat, subStat, useMagic } = result;
+    try {
+      await interaction.deferUpdate();
 
-    const statLine = `Main Stat: ${stats[mainStat]} | Sub Stat: ${stats[subStat]}` +
-      `${useMagic ? ` | MATT: ${stats.magic}` : ` | ATK: ${stats.attack}`} | All Stat%: ${stats.allStatPercent} | Boss Damage: ${stats.boss}%`;
+      const imageBuffer = fs.readFileSync(session.imagePath);
+      const result = await analyzeFlame(imageBuffer, session.main, session.sub, isStarforced);
 
-    const tierLine = tiers.join(', ');
-    const scoreLine = `**Flame Score:** ${flameScore} (${mainStat})`;
+      const { stats, tiers, flameScore, mainStat, subStat, useMagic } = result;
 
-    const reply = await interaction.update({
-      content: `**Flame Stats:**\n${statLine}\n\n**Flame Tier:**\n${tierLine}\n\n${scoreLine}`,
-      components: []
-    });
+      const statLine = `Main Stat: ${stats[mainStat]} | Sub Stat: ${stats[subStat]}` +
+        `${useMagic ? ` | MATT: ${stats.magic}` : ` | ATK: ${stats.attack}`} | All Stat%: ${stats.allStatPercent} | Boss Damage: ${stats.boss}%`;
 
-    // Cleanup after 60 seconds
-    setTimeout(async () => {
+      const tierLine = tiers.join(', ');
+      const scoreLine = `**Flame Score:** ${flameScore} (${mainStat})`;
+
+      const followup = await interaction.followUp({
+        content: `**Flame Stats:**\n${statLine}\n\n**Flame Tier:**\n${tierLine}\n\n${scoreLine}`,
+        ephemeral: false
+      });
+
+      setTimeout(async () => {
+        try {
+          const msg = await interaction.channel.messages.fetch(followup.id);
+          if (msg) await msg.delete();
+          const userMsg = await interaction.channel.messages.fetch(session.originalImageId);
+          if (userMsg) await userMsg.delete();
+        } catch (err) {
+          console.warn('Cleanup error:', err.message);
+        }
+
+        if (fs.existsSync(session.imagePath)) {
+          fs.unlinkSync(session.imagePath);
+        }
+        userSessions.delete(interaction.user.id);
+      }, 60000);
+
+    } catch (err) {
+      console.error('Error during starforced interaction:', err);
       try {
-        const msg = await interaction.channel.messages.fetch(reply.id);
-        if (msg) await msg.delete();
-        const userMsg = await interaction.channel.messages.fetch(session.originalImageId);
-        if (userMsg) await userMsg.delete();
-      } catch { }
+        await interaction.followUp({
+          content: '⚠️ Something went wrong while analyzing the image. Please try again.',
+          ephemeral: true
+        });
+      } catch (e) {
+        console.warn('Follow-up error:', e.message);
+      }
 
-      if (fs.existsSync(session.imagePath)) fs.unlinkSync(session.imagePath);
+      if (fs.existsSync(session.imagePath)) {
+        fs.unlinkSync(session.imagePath);
+      }
       userSessions.delete(interaction.user.id);
-    }, 60000);
+    }
   }
 });
 

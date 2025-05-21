@@ -152,8 +152,10 @@ async function extractStats(imageBuffer, isStarforced) {
     else if (/Type: (.+)/i.test(line)) {
       const match = line.match(/Type: (.+)/i);
       if (match) stats.weaponType = match[1];
-    } else if (/REQ(?:UIRED)?\s*LEV(?:EL)?[:\s]*([0-9]+)/i.test(line)) {
-      equipLevel = parseInt(line.match(/REQ(?:UIRED)?\s*LEV(?:EL)?[:\s]*([0-9]+)/i)[1]);
+    }
+    // 🔧 FIXED: Looser matching for REQ LEV
+    else if (/REQ.*LEV.*[:\s]+([0-9]+)/i.test(line)) {
+      equipLevel = parseInt(line.match(/REQ.*LEV.*[:\s]+([0-9]+)/i)[1]);
       console.log('[Parsed REQ LEV]', equipLevel);
     }
   }

@@ -127,7 +127,6 @@ async function extractStats(imageBuffer, isStarforced) {
     if (values.length === 3 && totalMatch) {
       const total = parseInt(totalMatch[1]);
       const [base, flame, enhancement] = values;
-
       if (base + flame + enhancement === total) {
         stats[key] = flame;
       } else {
@@ -145,15 +144,17 @@ async function extractStats(imageBuffer, isStarforced) {
   };
 
   for (const line of lines) {
-    if (/STR/i.test(line)) parseStatLine(line, 'STR');
-    else if (/DEX/i.test(line)) parseStatLine(line, 'DEX');
-    else if (/\bI?NT\b/i.test(line)) parseStatLine(line, 'INT');
-    else if (/LUK/i.test(line)) parseStatLine(line, 'LUK');
-    else if (/Max.*HP/i.test(line)) parseStatLine(line, 'HP');
-    else if (/Attack Power|AllackPower/i.test(line)) parseStatLine(line, 'attack');
-    else if (/Magic Attack/i.test(line)) parseStatLine(line, 'magic');
-    else if (/All Stats/i.test(line)) parseStatLine(line, 'allStatPercent');
-    else if (/Boss Damage/i.test(line)) parseStatLine(line, 'boss');
+    const lc = line.toLowerCase();
+
+    if (lc.includes('str') && lc.includes('+')) parseStatLine(line, 'STR');
+    else if (lc.includes('dex') && lc.includes('+')) parseStatLine(line, 'DEX');
+    else if ((lc.includes('int') || lc.includes('nt')) && lc.includes('+')) parseStatLine(line, 'INT');
+    else if (lc.includes('luk') && lc.includes('+')) parseStatLine(line, 'LUK');
+    else if ((lc.includes('maxhp') || lc.includes('max hp')) && lc.includes('+')) parseStatLine(line, 'HP');
+    else if (lc.includes('attack power') && lc.includes('+')) parseStatLine(line, 'attack');
+    else if (lc.includes('magic attack') && lc.includes('+')) parseStatLine(line, 'magic');
+    else if (lc.includes('all stats') && lc.includes('+')) parseStatLine(line, 'allStatPercent');
+    else if (lc.includes('boss damage') && lc.includes('+')) parseStatLine(line, 'boss');
     else if (/Type: (.+)/i.test(line)) {
       const match = line.match(/Type: (.+)/i);
       if (match) stats.weaponType = match[1];
@@ -161,6 +162,8 @@ async function extractStats(imageBuffer, isStarforced) {
     else if (/REQ.*LEV.*[:\s]+([0-9]+)/i.test(line)) {
       equipLevel = parseInt(line.match(/REQ.*LEV.*[:\s]+([0-9]+)/i)[1]);
       console.log('[Parsed REQ LEV]', equipLevel);
+    } else {
+      console.log('[Unmatched Line]', line);
     }
   }
 

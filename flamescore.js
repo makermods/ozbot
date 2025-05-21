@@ -1,4 +1,5 @@
 const Tesseract = require('tesseract.js');
+const Jimp = require('jimp');
 
 const FLAME_TIERS = {
   stat: [4, 8, 12, 16, 20, 24, 28],
@@ -43,8 +44,22 @@ function getStatTierBreakdown(stats, main, sub, useMagic) {
 }
 
 async function extractStats(imageBuffer, isStarforced) {
-  const { data: { text } } = await Tesseract.recognize(imageBuffer, 'eng', {
-    tessedit_char_whitelist: '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ:+%() '
+  const image = await Jimp.read(imageBuffer);
+
+  // Resize and preprocess
+  image
+    .resize(image.bitmap.width * 2, image.bitmap.height * 2)
+    .grayscale()
+    .contrast(0.5)
+    .normalize()
+    .brightness(0.1)
+    .quality(100);
+
+  const {
+    data: { text }
+  } = await Tesseract.recognize(await image.getBufferAsync(Jimp.MIME_PNG), 'eng', {
+    tessedit_char_whitelist: '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ:+%() ',
+    psm: 6
   });
 
   const stats = {
@@ -56,23 +71,39 @@ async function extractStats(imageBuffer, isStarforced) {
   const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
   console.log('--- OCR TEXT ---\n' + lines.join('\n'));
 
-  for (const line of lines) {
-    const parseStatLine = (label, key) => {
-      const regex = new RegExp(`${label}.*\\+(\\d+)\\s*(\\+\\d+)?\\s*\\+(\\d+)`);
-      const match = line.match(regex);
-      if (match) stats[key] = parseInt(isStarforced ? match[2]?.replace('+', '') : match[1]);
-    };
+  const parseStatLine = (line, key, isPercent = false) => {
+    const numbers = line.match(/\+(\d+)%?/g)?.map(n => parseInt(n.replace(/\+|%/g, ''))) || [];
 
-    if (/STR/i.test(line)) parseStatLine('STR', 'STR');
-    else if (/DEX/i.test(line)) parseStatLine('DEX', 'DEX');
-    else if (/INT/i.test(line)) parseStatLine('INT', 'INT');
-    else if (/LUK/i.test(line)) parseStatLine('LUK', 'LUK');
-    else if (/HP/i.test(line)) parseStatLine('MaxHP', 'HP');
-    else if (/Attack Power/i.test(line)) parseStatLine('Attack Power', 'attack');
-    else if (/Magic Attack/i.test(line)) parseStatLine('Magic Attack', 'magic');
-    else if (/All Stats.*\+(\d+)%/.test(line)) stats.allStatPercent = parseInt(line.match(/All Stats.*\+(\d+)%/)[1]);
-    else if (/Boss Damage.*\+(\d+)%/.test(line)) stats.boss = parseInt(line.match(/Boss Damage.*\+(\d+)%/)[1]);
-    else if (/Type: (.+)/i.test(line)) stats.weaponType = line.match(/Type: (.+)/i)[1];
+    if (['boss', 'allStatPercent'].includes(key)) {
+      // Always use second value if available
+      stats[key] = numbers.length >= 2 ? numbers[1] : 0;
+    } else {
+      if (isStarforced) {
+        if (numbers.length === 3) {
+          stats[key] = numbers[1]; // middle value is flame
+        } else {
+          stats[key] = 0; // not a flame stat, only base + enhancement
+        }
+      } else {
+        stats[key] = numbers[numbers.length - 1] ?? 0; // last value is flame
+      }
+    }
+  };
+
+  for (const line of lines) {
+    if (/STR/i.test(line)) parseStatLine(line, 'STR');
+    else if (/DEX/i.test(line)) parseStatLine(line, 'DEX');
+    else if (/INT/i.test(line)) parseStatLine(line, 'INT');
+    else if (/LUK/i.test(line)) parseStatLine(line, 'LUK');
+    else if (/Max.*HP/i.test(line)) parseStatLine(line, 'HP');
+    else if (/Attack Power|AllackPower/i.test(line)) parseStatLine(line, 'attack');
+    else if (/Magic Attack/i.test(line)) parseStatLine(line, 'magic');
+    else if (/All Stats/i.test(line)) parseStatLine(line, 'allStatPercent', true);
+    else if (/Boss Damage|BoseDamage/i.test(line)) parseStatLine(line, 'boss', true);
+    else if (/Type: (.+)/i.test(line)) {
+      const match = line.match(/Type: (.+)/i);
+      if (match) stats.weaponType = match[1];
+    }
   }
 
   return stats;

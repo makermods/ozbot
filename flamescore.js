@@ -41,7 +41,10 @@ function calculateFlameScore(stats, main, sub, useMagic) {
 
 function getTier(value, table) {
   for (let i = table.length - 1; i >= 0; i--) {
-    if (value >= table[i]) return i + 1;
+    if (value >= table[i]) {
+      console.log(`getTier: value=${value} → tier=${i + 1} (threshold=${table[i]})`);
+      return i + 1;
+    }
   }
   return 0;
 }
@@ -56,9 +59,16 @@ function getLevelBasedTierTable(level) {
 function getStatTierBreakdown(stats, main, sub, useMagic, equipLevel) {
   const breakdown = [];
   const levelBased = getLevelBasedTierTable(equipLevel);
+  console.log(`[Tier Table for Level ${equipLevel}]`, levelBased);
 
-  if (stats[main]) breakdown.push(`T${getTier(stats[main], levelBased)} (${main})`);
-  if (sub && stats[sub]) breakdown.push(`T${getTier(stats[sub], levelBased)} (${sub})`);
+  if (stats[main]) {
+    console.log(`Checking ${main}: ${stats[main]} against`, levelBased);
+    breakdown.push(`T${getTier(stats[main], levelBased)} (${main})`);
+  }
+  if (sub && stats[sub]) {
+    console.log(`Checking ${sub}: ${stats[sub]} against`, levelBased);
+    breakdown.push(`T${getTier(stats[sub], levelBased)} (${sub})`);
+  }
   if (useMagic && stats.magic) breakdown.push(`T${getTier(stats.magic, FIXED_TIERS.attack)} (MATT)`);
   if (!useMagic && stats.attack) breakdown.push(`T${getTier(stats.attack, FIXED_TIERS.attack)} (ATK)`);
   if (stats.allStatPercent) breakdown.push(`T${getTier(stats.allStatPercent, FIXED_TIERS.allStat)} (All Stat%)`);
@@ -144,6 +154,7 @@ async function extractStats(imageBuffer, isStarforced) {
       if (match) stats.weaponType = match[1];
     } else if (/REQ(?:UIRED)?\s*LEV(?:EL)?[:\s]*([0-9]+)/i.test(line)) {
       equipLevel = parseInt(line.match(/REQ(?:UIRED)?\s*LEV(?:EL)?[:\s]*([0-9]+)/i)[1]);
+      console.log('[Parsed REQ LEV]', equipLevel);
     }
   }
 

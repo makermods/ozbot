@@ -75,9 +75,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
   const session = userSessions.get(interaction.user.id);
   if (!session) return;
 
-  const [step, value] = interaction.customId.split('_');
+  const customId = interaction.customId;
 
-  if (step === 'main') {
+  if (customId.startsWith('main_')) {
+    const value = customId.split('_')[1];
     session.main = value;
     session.step = 'sub';
 
@@ -94,7 +95,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
       components: [row],
       ephemeral: false
     });
-  } else if (step === 'sub') {
+
+  } else if (customId.startsWith('sub_')) {
+    const value = customId.split('_')[1];
     session.sub = value;
     session.step = 'starforced';
 
@@ -109,7 +112,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
       components: [row],
       ephemeral: false
     });
-  } else if (step === 'starforced') {
+
+  } else if (customId.startsWith('starforced_')) {
+    const value = customId.split('_')[1];
     const isStarforced = value === 'yes';
     const imageBuffer = fs.readFileSync(session.imagePath);
     const result = await analyzeFlame(imageBuffer, session.main, session.sub, isStarforced);

@@ -1,9 +1,4 @@
-// Updated flamescore.js with:
-// - Weapon detection (Absolab, Arcane Umbra, Genesis)
-// - Weapon-specific tier logic for ATK & MATT
-// - Excludes ATK/MATT from flame score if item is a weapon
-// - Includes loose OCR matching (e.g., NT = INT)
-
+// Updated flamescore.js with OCR logging intact
 const Tesseract = require('tesseract.js');
 const Jimp = require('jimp');
 
@@ -138,6 +133,7 @@ async function extractStats(imageBuffer, isStarforced) {
   const manualInputRequired = [];
 
   const lines = text.split('\n').map(line => line.trim()).filter(Boolean);
+  console.log('--- OCR TEXT ---\n' + lines.join('\n'));
   const fullText = lines.join(' ').toLowerCase();
 
   const parseStatLine = (line, key) => {

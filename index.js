@@ -107,7 +107,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
         new ButtonBuilder().setCustomId('starforced_no').setLabel('No').setStyle(ButtonStyle.Danger)
       ]);
 
-    // Save ID of third prompt message for cleanup
     await interaction.update({
       content: 'Is your item starforced?',
       components: [row],
@@ -122,6 +121,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
     try {
       await interaction.deferUpdate();
+      await interaction.message.delete(); // 💥 instantly delete starforced prompt
 
       const imageBuffer = fs.readFileSync(session.imagePath);
       const result = await analyzeFlame(imageBuffer, session.main, session.sub, isStarforced);
@@ -146,9 +146,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
           const userMsg = await interaction.channel.messages.fetch(session.originalImageId);
           if (userMsg) await userMsg.delete();
-
-          const starPrompt = await interaction.channel.messages.fetch(session.starforcedPromptId);
-          if (starPrompt) await starPrompt.delete();
         } catch (err) {
           console.warn('Cleanup error:', err.message);
         }

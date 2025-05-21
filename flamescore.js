@@ -1,3 +1,9 @@
+// Updated flamescore.js with:
+// - Weapon detection (Absolab, Arcane Umbra, Genesis)
+// - Weapon-specific tier logic for ATK & MATT
+// - Excludes ATK/MATT from flame score if item is a weapon
+// - Includes loose OCR matching (e.g., NT = INT)
+
 const Tesseract = require('tesseract.js');
 const Jimp = require('jimp');
 
@@ -6,7 +12,7 @@ const FIXED_TIERS = {
   boss: [2, 4, 6, 8, 10, 12, 14]
 };
 
-const LEVEL_BASED_TIERS = [
+const LEVEL_TIERS = [
   { min: 0, max: 19, values: [1, 2, 3, 4, 5, 6, 7] },
   { min: 20, max: 39, values: [2, 4, 6, 8, 10, 12, 14] },
   { min: 40, max: 59, values: [3, 6, 9, 12, 15, 18, 21] },
@@ -21,46 +27,20 @@ const LEVEL_BASED_TIERS = [
   { min: 230, max: 999, values: [12, 24, 36, 48, 60, 72, 84] }
 ];
 
-const MAGE_WEAPONS = ['wand', 'staff', 'shining rod', 'fan', 'cane', 'psy-limiter'];
-
 const MANUAL_LABELS = {
-  STR: 'STR',
-  DEX: 'DEX',
-  INT: 'INT',
-  LUK: 'LUK',
-  HP: 'HP',
-  attack: 'Attack Power',
-  magic: 'Magic Attack',
-  boss: 'Boss Damage',
-  allStatPercent: 'All Stats %'
+  STR: 'STR', DEX: 'DEX', INT: 'INT', LUK: 'LUK', HP: 'HP',
+  attack: 'Attack Power', magic: 'Magic Attack',
+  boss: 'Boss Damage', allStatPercent: 'All Stats %'
+};
+
+const WEAPON_SETS = {
+  genesis: /genesis/i,
+  arcane: /arcane/i,
+  absolab: /absolab/i
 };
 
 function getManualPromptLabel(statKey) {
   return MANUAL_LABELS[statKey] || statKey;
-}
-
-function shouldUseMagicAttack(weaponType) {
-  if (!weaponType) return false;
-  return MAGE_WEAPONS.some(type => weaponType.toLowerCase().includes(type));
-}
-
-function calculateFlameScore(stats, main, sub, useMagic, isWeapon) {
-  let score = 0;
-  score += stats[main] || 0;
-  if (sub) score += Math.floor((stats[sub] || 0) / 12);
-  if (!isWeapon) {
-    if (useMagic) score += (stats.magic || 0) * 3;
-    else score += (stats.attack || 0) * 3;
-  }
-  score += (stats.allStatPercent || 0) * 10;
-  return score;
-}
-
-function getLevelBasedTierTable(level) {
-  for (const range of LEVEL_BASED_TIERS) {
-    if (level >= range.min && level <= range.max) return range.values;
-  }
-  return LEVEL_BASED_TIERS[0].values;
 }
 
 function getTier(value, table) {
@@ -70,82 +50,115 @@ function getTier(value, table) {
   return 0;
 }
 
-function getStatTierBreakdown(stats, main, sub, useMagic, equipLevel) {
-  const breakdown = [];
-  const levelBased = getLevelBasedTierTable(equipLevel);
+function isWeaponType(text) {
+  return /claw|staff|sword|bow|dagger|rod|gun|cannon|knuckle|katana|polearm|spear|crossbow|weapon/i.test(text);
+}
 
-  if (stats[main]) breakdown.push(`T${getTier(stats[main], levelBased)} (${main})`);
-  if (sub && stats[sub]) breakdown.push(`T${getTier(stats[sub], levelBased)} (${sub})`);
-  if (useMagic && stats.magic) breakdown.push(`T${getTier(stats.magic, [2, 4, 6, 8, 10, 12, 14])} (MATT)`);
-  if (!useMagic && stats.attack) breakdown.push(`T${getTier(stats.attack, [2, 4, 6, 8, 10, 12, 14])} (ATK)`);
+function detectWeaponSet(text) {
+  for (const [set, regex] of Object.entries(WEAPON_SETS)) {
+    if (regex.test(text)) return set;
+  }
+  return null;
+}
+
+function getLevelTierTable(level) {
+  return LEVEL_TIERS.find(t => level >= t.min && level <= t.max)?.values || LEVEL_TIERS[0].values;
+}
+
+function shouldUseMagicAttack(type) {
+  return /staff|wand|rod|shining rod|psy-limiter|fan|cane/i.test(type);
+}
+
+function calculateFlameScore(stats, main, sub, useMagic, isWeapon) {
+  let score = 0;
+  score += stats[main] || 0;
+  if (sub) score += Math.floor((stats[sub] || 0) / 12);
+  if (!isWeapon) {
+    score += (useMagic ? stats.magic : stats.attack) * 3;
+  }
+  score += (stats.allStatPercent || 0) * 10;
+  return score;
+}
+
+function getWeaponTier(flameVal, base, set) {
+  const tables = {
+    genesis: {
+      406: [74, 108, 148, 195, 250],
+      400: [72, 106, 146, 192, 246]
+    },
+    arcane: {
+      406: [64, 94, 129, 170, 218],
+      302: [55, 80, 110, 145, 186]
+    },
+    absolab: {
+      251: [30, 44, 60, 79, 101],
+      205: [31, 46, 63, 82, 106]
+    }
+  };
+
+  const setTable = tables[set];
+  const row = setTable?.[base];
+  if (!row) return null;
+  for (let i = row.length - 1; i >= 0; i--) {
+    if (flameVal >= row[i]) return `T${i + 3}`;
+  }
+  return 'T0';
+}
+
+function getStatTierBreakdown(stats, main, sub, useMagic, level, isWeapon, set, baseAtk) {
+  const breakdown = [];
+  const levelTiers = getLevelTierTable(level);
+
+  if (stats[main]) breakdown.push(`T${getTier(stats[main], levelTiers)} (${main})`);
+  if (sub && stats[sub]) breakdown.push(`T${getTier(stats[sub], levelTiers)} (${sub})`);
+
+  if (isWeapon && baseAtk && set) {
+    const atkVal = useMagic ? stats.magic : stats.attack;
+    const tier = getWeaponTier(atkVal, baseAtk, set);
+    if (tier) breakdown.push(`${tier} (${useMagic ? 'MATT' : 'ATK'})`);
+  } else {
+    if (useMagic && stats.magic) breakdown.push(`T${getTier(stats.magic, [2, 4, 6, 8, 10, 12, 14])} (MATT)`);
+    if (!useMagic && stats.attack) breakdown.push(`T${getTier(stats.attack, [2, 4, 6, 8, 10, 12, 14])} (ATK)`);
+  }
+
   if (stats.allStatPercent) breakdown.push(`T${getTier(stats.allStatPercent, FIXED_TIERS.allStat)} (All Stat%)`);
   if (stats.boss) breakdown.push(`T${getTier(stats.boss, FIXED_TIERS.boss)} (Boss)`);
+
   return breakdown;
 }
 
 async function extractStats(imageBuffer, isStarforced) {
   const image = await Jimp.read(imageBuffer);
-  image
-    .resize(image.bitmap.width * 2, image.bitmap.height * 2)
-    .grayscale()
-    .contrast(0.5)
-    .normalize()
-    .brightness(0.1)
-    .quality(100);
+  image.resize(image.bitmap.width * 2, image.bitmap.height * 2).grayscale().contrast(0.5).normalize().brightness(0.1);
 
-  const { data: { text } } = await Tesseract.recognize(await image.getBufferAsync(Jimp.MIME_PNG), 'eng', {
-    tessedit_char_whitelist: '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ:+%() ',
-    psm: 6
-  });
+  const { data: { text } } = await Tesseract.recognize(await image.getBufferAsync(Jimp.MIME_PNG), 'eng');
 
-  const stats = {
-    STR: 0, DEX: 0, INT: 0, LUK: 0, HP: 0,
-    attack: 0, magic: 0, boss: 0, allStatPercent: 0,
-    weaponType: '', baseAttack: null
-  };
-
+  const stats = { STR: 0, DEX: 0, INT: 0, LUK: 0, HP: 0, attack: 0, magic: 0, boss: 0, allStatPercent: 0, weaponType: '', baseAttack: 0 };
   let equipLevel = 0;
   const manualInputRequired = [];
 
-  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-  console.log('--- OCR TEXT ---\n' + lines.join('\n'));
+  const lines = text.split('\n').map(line => line.trim()).filter(Boolean);
+  const fullText = lines.join(' ').toLowerCase();
 
   const parseStatLine = (line, key) => {
-    const totalMatch = line.match(/\+(\d+)/);
-    const values = line.match(/\((.*?)\)/)?.[1]?.match(/\d+/g)?.map(Number) || [];
-
-    if (['boss', 'allStatPercent'].includes(key)) {
-      stats[key] = values[1] ?? 0;
-      return;
-    }
-
-    if (!isStarforced) {
-      stats[key] = values[1] ?? 0;
-      return;
-    }
-
-    if (values.length === 3 && totalMatch) {
-      const total = parseInt(totalMatch[1]);
+    const match = line.match(/\+(\d+).*\(([^)]+)\)/);
+    if (!match) return;
+    const [ , total ] = match;
+    const values = match[2].match(/\d+/g)?.map(Number) || [];
+    if (values.length === 3 && isStarforced) {
       const [base, flame, enhancement] = values;
-      if (base + flame + enhancement === total) {
-        stats[key] = flame;
-      } else {
-        const correctedFlame = total - base - enhancement;
-        if (correctedFlame >= 0 && correctedFlame <= 999) {
-          stats[key] = correctedFlame;
-        } else {
-          stats[key] = 0;
-          manualInputRequired.push(key);
-        }
-      }
+      if (base + flame + enhancement === +total) stats[key] = flame;
+      else stats[key] = Math.max(0, +total - base - enhancement);
+    } else if (values.length >= 2) {
+      stats[key] = values[1];
     } else {
       stats[key] = 0;
+      manualInputRequired.push(key);
     }
   };
 
   for (const line of lines) {
     const lc = line.toLowerCase();
-
     if (lc.includes('str') && lc.includes('+')) parseStatLine(line, 'STR');
     else if (lc.includes('dex') && lc.includes('+')) parseStatLine(line, 'DEX');
     else if ((lc.includes('int') || lc.includes('nt')) && lc.includes('+')) parseStatLine(line, 'INT');
@@ -158,40 +171,29 @@ async function extractStats(imageBuffer, isStarforced) {
     else if (/Type: (.+)/i.test(line)) {
       const match = line.match(/Type: (.+)/i);
       if (match) stats.weaponType = match[1];
-    }
-    else if (/REQ.*LEV.*[:\s]+([0-9]+)/i.test(line)) {
-      equipLevel = parseInt(line.match(/REQ.*LEV.*[:\s]+([0-9]+)/i)[1]);
-      console.log('[Parsed REQ LEV]', equipLevel);
-    } else {
-      console.log('[Unmatched Line]', line);
+    } else if (/REQ.*LEV.*[:\s]+(\d+)/i.test(line)) {
+      equipLevel = parseInt(line.match(/REQ.*LEV.*[:\s]+(\d+)/i)[1]);
     }
   }
 
-  return { stats, manualInputRequired, equipLevel };
+  return { stats, equipLevel, manualInputRequired, isWeapon: isWeaponType(stats.weaponType), weaponSet: detectWeaponSet(fullText) };
 }
 
 async function analyzeFlame(imageBuffer, mainStat, subStat, isStarforced) {
-  const { stats, manualInputRequired, equipLevel } = await extractStats(imageBuffer, isStarforced);
+  const { stats, equipLevel, manualInputRequired, isWeapon, weaponSet } = await extractStats(imageBuffer, isStarforced);
   const useMagic = shouldUseMagicAttack(stats.weaponType);
-  const isWeapon = /claw|sword|bow|dagger|staff|rod|gun|cannon|knuckle|katana|polearm|spear|crossbow|weapon/i.test(stats.weaponType || '');
-
   const flameScore = calculateFlameScore(stats, mainStat, subStat, useMagic, isWeapon);
-  const tierBreakdown = getStatTierBreakdown(stats, mainStat, subStat, useMagic, equipLevel || 0);
+  const tiers = getStatTierBreakdown(stats, mainStat, subStat, useMagic, equipLevel, isWeapon, weaponSet, useMagic ? stats.magic : stats.attack);
 
   return {
     stats,
     flameScore,
-    tiers: tierBreakdown,
+    tiers,
     useMagic,
     mainStat,
     subStat,
-    manualInputRequired: manualInputRequired.map(key => ({
-      key,
-      label: getManualPromptLabel(key)
-    }))
+    manualInputRequired: manualInputRequired.map(key => ({ key, label: getManualPromptLabel(key) }))
   };
 }
 
-module.exports = {
-  analyzeFlame
-};
+module.exports = { analyzeFlame };

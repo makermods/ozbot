@@ -1,3 +1,9 @@
+// This updated index.js implements message deletion timing:
+// - Initial image: 30s after result
+// - Stat selection prompts: deleted immediately
+// - Manual stat prompts & replies: deleted 2s after input
+// - Result message: 30s after it's shown
+
 require('dotenv').config();
 const {
   Client,
@@ -63,19 +69,20 @@ client.on(Events.MessageCreate, async (message) => {
     messageId: prompt.id,
     originalImageId: message.id
   });
-
-  setTimeout(() => {
-    if (fs.existsSync(imagePath)) fs.unlinkSync(imagePath);
-  }, 60000);
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
   if (!interaction.isButton()) return;
-
   const session = userSessions.get(interaction.user.id);
   if (!session) return;
 
   const [step, value] = interaction.customId.split('_');
+
+  // Delete the previous prompt immediately
+  try {
+    const msg = await interaction.channel.messages.fetch(interaction.message.id);
+    if (msg) await msg.delete();
+  } catch {}
 
   if (step === 'main') {
     session.main = value;
@@ -89,11 +96,12 @@ client.on(Events.InteractionCreate, async (interaction) => {
           .setStyle(ButtonStyle.Secondary)
       ));
 
-    await interaction.update({
+    const newPrompt = await interaction.channel.send({
       content: 'What is your secondary stat?',
-      components: [row],
-      ephemeral: false
+      components: [row]
     });
+
+    session.messageId = newPrompt.id;
 
   } else if (step === 'sub') {
     session.sub = value;
@@ -105,14 +113,15 @@ client.on(Events.InteractionCreate, async (interaction) => {
         new ButtonBuilder().setCustomId('starforced_no').setLabel('No').setStyle(ButtonStyle.Danger)
       ]);
 
-    await interaction.update({
+    const newPrompt = await interaction.channel.send({
       content: 'Is your item starforced?',
-      components: [row],
-      ephemeral: false
+      components: [row]
     });
 
+    session.messageId = newPrompt.id;
+
   } else if (step === 'starforced') {
-    await interaction.deferReply({ ephemeral: false }); // ✅ Fixes "this interaction failed"
+    await interaction.deferReply({ ephemeral: false });
 
     const isStarforced = value === 'yes';
     const imageBuffer = fs.readFileSync(session.imagePath);
@@ -120,25 +129,20 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
     const { stats, tiers, flameScore, mainStat, subStat, useMagic, manualInputRequired } = result;
 
-    try {
-      const msg = await interaction.channel.messages.fetch(interaction.message.id);
-      if (msg) await msg.delete();
-    } catch (e) { }
-
     if (manualInputRequired.length > 0) {
       session.result = result;
       session.pendingInputs = manualInputRequired;
       session.manualStats = {};
-
       const stat = manualInputRequired[0];
       session.step = 'manual';
       session.currentManual = stat;
 
-      await interaction.followUp({
+      const promptMsg = await interaction.followUp({
         content: `Auto-detection failed. Please enter the flame value for **${stat.label}**:`,
-        ephemeral: true
+        ephemeral: false
       });
 
+      session.lastPromptId = promptMsg.id;
       return;
     }
 
@@ -148,20 +152,21 @@ client.on(Events.InteractionCreate, async (interaction) => {
     const tierLine = tiers.join(', ');
     const scoreLine = `**Flame Score:** ${flameScore} (${mainStat})`;
 
-    const reply = await interaction.followUp({
+    const resultMsg = await interaction.followUp({
       content: `**Flame Stats:**\n${statLine}\n\n**Flame Tier:**\n${tierLine}\n\n${scoreLine}`,
       ephemeral: false
     });
 
     setTimeout(async () => {
       try {
+        const msg = await interaction.channel.messages.fetch(resultMsg.id);
+        if (msg) await msg.delete();
         const userMsg = await interaction.channel.messages.fetch(session.originalImageId);
         if (userMsg) await userMsg.delete();
-      } catch { }
-
+      } catch {}
       if (fs.existsSync(session.imagePath)) fs.unlinkSync(session.imagePath);
       userSessions.delete(interaction.user.id);
-    }, 60000);
+    }, 30000);
   }
 });
 
@@ -178,16 +183,26 @@ client.on(Events.MessageCreate, async (message) => {
   }
 
   session.manualStats[statKey] = value;
-
   const nextIndex = session.pendingInputs.findIndex(s => s.key === statKey) + 1;
+
+  // Delete manual prompt and user input after 2 seconds
+  setTimeout(async () => {
+    try {
+      const prompt = await message.channel.messages.fetch(session.lastPromptId);
+      if (prompt) await prompt.delete();
+      await message.delete();
+    } catch {}
+  }, 2000);
+
   if (nextIndex < session.pendingInputs.length) {
     const nextStat = session.pendingInputs[nextIndex];
     session.currentManual = nextStat;
 
-    await message.reply({
-      content: `Please enter the flame value for **${nextStat.label}**:`,
-      ephemeral: true
+    const nextPrompt = await message.channel.send({
+      content: `Please enter the flame value for **${nextStat.label}**:`
     });
+
+    session.lastPromptId = nextPrompt.id;
   } else {
     const result = session.result;
     const stats = { ...result.stats, ...session.manualStats };
@@ -197,20 +212,19 @@ client.on(Events.MessageCreate, async (message) => {
     const tierLine = result.tiers.join(', ');
     const scoreLine = `**Flame Score:** ${result.flameScore} (${result.mainStat})`;
 
-    await message.reply({
-      content: `**Flame Stats:**\n${statLine}\n\n**Flame Tier:**\n${tierLine}\n\n${scoreLine}`,
-      ephemeral: false
+    const reply = await message.channel.send({
+      content: `**Flame Stats:**\n${statLine}\n\n**Flame Tier:**\n${tierLine}\n\n${scoreLine}`
     });
 
     setTimeout(async () => {
       try {
         const userMsg = await message.channel.messages.fetch(session.originalImageId);
         if (userMsg) await userMsg.delete();
-      } catch { }
-
+        if (reply) await reply.delete();
+      } catch {}
       if (fs.existsSync(session.imagePath)) fs.unlinkSync(session.imagePath);
       userSessions.delete(message.author.id);
-    }, 60000);
+    }, 30000);
   }
 });
 

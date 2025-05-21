@@ -85,8 +85,18 @@ function getWeaponTier(flameVal, base, set) {
       302: [55, 80, 110, 145, 186]
     },
     absolab: {
-      251: [30, 44, 60, 79, 101],
-      205: [31, 46, 63, 82, 106]
+      103: [16, 23, 32, 42, 53],
+      143: [22, 32, 44, 58, 74],
+      150: [23, 33, 46, 60, 77],
+      151: [23, 34, 46, 61, 78],
+      154: [24, 34, 47, 62, 79],
+      184: [28, 41, 56, 74, 95],
+      192: [29, 43, 59, 77, 99],
+      197: [30, 44, 60, 79, 101],
+      205: [31, 46, 63, 82, 106],
+      210: [32, 47, 64, 84, 108],
+      241: [37, 54, 73, 97, 124],
+      245: [37, 54, 75, 98, 126]
     }
   };
 
@@ -152,11 +162,11 @@ async function extractStats(imageBuffer, isStarforced) {
     }
 
     if (values.length === 3 && isStarforced) {
-      stats[key] = values[1]; // flame value
+      stats[key] = values[1];
     } else if (values.length === 2 && isStarforced) {
-      stats[key] = 0; // no flame present, just base + enhancement
+      stats[key] = 0;
     } else if (values.length >= 2) {
-      stats[key] = values[1]; // unenhanced flame value
+      stats[key] = values[1];
     } else {
       stats[key] = 0;
       manualInputRequired.push(key);
@@ -197,7 +207,7 @@ async function extractStats(imageBuffer, isStarforced) {
     equipLevel,
     manualInputRequired,
     isWeapon: isWeaponType(stats.weaponType),
-    weaponSet: detectWeaponSet(fullText)
+    weaponSet: detectWeaponSet(lines.join(' '))
   };
 }
 
@@ -217,7 +227,9 @@ async function analyzeFlame(imageBuffer, mainStat, subStat, isStarforced) {
     manualInputRequired: manualInputRequired.map(key => ({
       key,
       label: getManualPromptLabel(key)
-    }))
+    })),
+    manualSetPrompt: isWeapon && !weaponSet,
+    weaponSetDetected: weaponSet
   };
 }
 

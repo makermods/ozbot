@@ -1,4 +1,3 @@
-
 require('dotenv').config();
 const {
   Client,
@@ -117,77 +116,71 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
     session.starforcedPromptId = prompt.id;
 
-      } else if (step === 'starforced') {
+  } else if (step === 'starforced') {
     const isStarforced = value === 'yes';
     session.step = 'analyzing';
 
-    if (session.starforcedPromptId) {
-      try {
+    try {
+      if (session.starforcedPromptId) {
         const msg = await interaction.channel.messages.fetch(session.starforcedPromptId);
         if (msg) await msg.delete();
-      } catch {}
-    }
-
-    const imageBuffer = fs.readFileSync(session.imagePath);
-    const result = await analyzeFlame(imageBuffer, session.main, session.sub, isStarforced);
-
-    if (result.manualSetPrompt) {
-      const row = new ActionRowBuilder().addComponents([
-        new ButtonBuilder().setCustomId('set_absolab').setLabel('AbsoLab').setStyle(ButtonStyle.Primary),
-        new ButtonBuilder().setCustomId('set_arcane').setLabel('Arcane').setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId('set_genesis').setLabel('Genesis').setStyle(ButtonStyle.Success),
-      ]);
-
-      const msg = await interaction.update({
-        content: 'Manual weapon detection failed. Please select your weapon set to correctly calculate flame tier:',
-        components: [row]
-      });
-
-      session.step = 'weaponSet';
-      session.tempResult = result;
-      session.tempMsgId = msg.id;
-      return;
-    }
-
-    if (result.manualInputRequired.length > 0) {
-      session.pendingStats = result.manualInputRequired;
-      session.stats = result.stats;
-      session.useMagic = result.useMagic;
-      session.flameScore = result.flameScore;
-      session.tiers = result.tiers;
-      session.mainStat = result.mainStat;
-      session.subStat = result.subStat;
-      session.isStarforced = isStarforced;
-
-      const current = session.pendingStats.shift();
-      session.awaitingStat = current.key;
-
-      const prompt = await interaction.update({
-        content: `Auto-detection failed. Please enter the flame value for ${current.label}:`,
-        components: []
-      });
-
-      session.promptId = prompt.id;
-      return;
-    }
-
-    await postFlameResult(interaction, result, session, isStarforced);
-
-  } else if (step === 'set') {
-    const weaponSet = value;
-    const imageBuffer = fs.readFileSync(session.imagePath);
-    const result = await analyzeFlame(imageBuffer, session.main, session.sub, true);
-    result.weaponSetDetected = weaponSet;
-
-    try {
-      const m = await interaction.channel.messages.fetch(session.tempMsgId);
-      if (m) await m.delete();
+      }
     } catch {}
 
-    await postFlameResult(interaction, result, session, true);
+    try {
+      const imageBuffer = fs.readFileSync(session.imagePath);
+      const result = await analyzeFlame(imageBuffer, session.main, session.sub, isStarforced);
+
+      if (result.manualSetPrompt) {
+        const row = new ActionRowBuilder().addComponents([
+          new ButtonBuilder().setCustomId('set_absolab').setLabel('AbsoLab').setStyle(ButtonStyle.Primary),
+          new ButtonBuilder().setCustomId('set_arcane').setLabel('Arcane').setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder().setCustomId('set_genesis').setLabel('Genesis').setStyle(ButtonStyle.Success),
+        ]);
+
+        const msg = await interaction.update({
+          content: 'Manual weapon detection failed. Please select your weapon set to correctly calculate flame tier:',
+          components: [row]
+        });
+
+        session.step = 'weaponSet';
+        session.tempResult = result;
+        session.tempMsgId = msg.id;
+        return;
+      }
+
+      if (result.manualInputRequired.length > 0) {
+        session.pendingStats = result.manualInputRequired;
+        session.stats = result.stats;
+        session.useMagic = result.useMagic;
+        session.flameScore = result.flameScore;
+        session.tiers = result.tiers;
+        session.mainStat = result.mainStat;
+        session.subStat = result.subStat;
+        session.isStarforced = isStarforced;
+
+        const current = session.pendingStats.shift();
+        session.awaitingStat = current.key;
+
+        const prompt = await interaction.update({
+          content: `Auto-detection failed. Please enter the flame value for ${current.label}:`,
+          components: []
+        });
+
+        session.promptId = prompt.id;
+        return;
+      }
+
+      await postFlameResult(interaction, result, session, isStarforced);
+    } catch (error) {
+      console.error('[analyzeFlame ERROR]', error);
+      await interaction.reply({
+        content: 'An error occurred while analyzing the image.',
+        ephemeral: true
+      });
+    }
   }
 });
-
 client.on(Events.MessageCreate, async (message) => {
   if (!userSessions.has(message.author.id)) return;
   const session = userSessions.get(message.author.id);

@@ -219,7 +219,8 @@ async function analyzeFlame(imageBuffer, mainStat, subStat, isStarforced) {
     subStat,
     manualInputRequired: manualInputRequired.map(key => ({ key, label: getManualPromptLabel(key) })),
     manualSetPrompt,
-    weaponSetDetected: weaponSet
+    weaponSetDetected: weaponSet,
+    levelRequirement: equipLevel
   };
 }
 

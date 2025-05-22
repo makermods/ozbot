@@ -203,7 +203,7 @@ async function postFlameResult(interaction, result, session) {
 
   const updatedTiers = getStatTierBreakdown(
     stats, mainStat, subStat, useMagic,
-    stats.levelRequirement || 0,
+    result.levelRequirement || 0,
     isWeapon,
     weaponSet,
     baseAtk

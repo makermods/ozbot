@@ -1,4 +1,3 @@
-// ✅ PATCHED flamescore.js WITH FULL TIER TABLES + LOGGING
 const Tesseract = require('tesseract.js');
 const Jimp = require('jimp');
 
@@ -42,9 +41,9 @@ function getManualPromptLabel(statKey) {
   return MANUAL_LABELS[statKey] || statKey;
 }
 
-function getTier(value, table) {
+function getTier(value, table, offset = 1) {
   for (let i = table.length - 1; i >= 0; i--) {
-    if (value >= table[i]) return i + 3;
+    if (value >= table[i]) return i + offset;
   }
   return 0;
 }
@@ -124,20 +123,20 @@ function getStatTierBreakdown(stats, main, sub, useMagic, level, isWeapon, set, 
   const breakdown = [];
   const levelTiers = getLevelTierTable(level);
 
-  if (stats[main]) breakdown.push(`T${getTier(stats[main], levelTiers)} (${main})`);
-  if (sub && stats[sub]) breakdown.push(`T${getTier(stats[sub], levelTiers)} (${sub})`);
+  if (stats[main]) breakdown.push(`T${getTier(stats[main], levelTiers, 1)} (${main})`);
+  if (sub && stats[sub]) breakdown.push(`T${getTier(stats[sub], levelTiers, 1)} (${sub})`);
 
   if (isWeapon && baseAtk && set) {
     const atkVal = useMagic ? stats.magic : stats.attack;
     const tier = getWeaponTier(atkVal, baseAtk, set);
     if (tier) breakdown.push(`${tier} (${useMagic ? 'MATT' : 'ATK'})`);
   } else {
-    if (useMagic && stats.magic) breakdown.push(`T${getTier(stats.magic, [2, 4, 6, 8, 10, 12, 14])} (MATT)`);
-    if (!useMagic && stats.attack) breakdown.push(`T${getTier(stats.attack, [2, 4, 6, 8, 10, 12, 14])} (ATK)`);
+    if (useMagic && stats.magic) breakdown.push(`T${getTier(stats.magic, [2, 4, 6, 8, 10, 12, 14], 1)} (MATT)`);
+    if (!useMagic && stats.attack) breakdown.push(`T${getTier(stats.attack, [2, 4, 6, 8, 10, 12, 14], 1)} (ATK)`);
   }
 
-  if (stats.allStatPercent) breakdown.push(`T${getTier(stats.allStatPercent, FIXED_TIERS.allStat)} (All Stat%)`);
-  if (stats.boss) breakdown.push(`T${getTier(stats.boss, FIXED_TIERS.boss)} (Boss)`);
+  if (stats.allStatPercent) breakdown.push(`T${getTier(stats.allStatPercent, FIXED_TIERS.allStat, 1)} (All Stat%)`);
+  if (stats.boss) breakdown.push(`T${getTier(stats.boss, FIXED_TIERS.boss, 1)} (Boss)`);
 
   return breakdown;
 }
@@ -174,8 +173,6 @@ async function analyzeFlame(imageBuffer, mainStat, subStat, isStarforced) {
     }
   };
 
-  log(`🧪 [PARSED BOSS] Flame value for boss damage: \n${stats.boss}`);
-
   for (const line of lines) {
     const lc = line.toLowerCase();
     if (lc.includes('str') && lc.includes('+')) parseStatLine(line, 'STR');
@@ -198,7 +195,10 @@ async function analyzeFlame(imageBuffer, mainStat, subStat, isStarforced) {
         log(`✅ [MATT] Extracted baseAttack: ${stats.baseAttack}`);
       }
     } else if (lc.includes('all stats') && lc.includes('+')) parseStatLine(line, 'allStatPercent');
-    else if (lc.includes('boss damage') && lc.includes('+')) parseStatLine(line, 'boss');
+    else if (lc.includes('boss damage') && lc.includes('+')) {
+      parseStatLine(line, 'boss');
+      log(`🧪 [PARSED BOSS] Flame value for boss damage: ${stats.boss}`);
+    }
     else if (/Type: (.+)/i.test(line)) {
       const match = line.match(/Type: (.+)/i);
       if (match) stats.weaponType = match[1];

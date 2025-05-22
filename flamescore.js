@@ -178,8 +178,8 @@ async function analyzeFlame(imageBuffer, mainStat, subStat, isStarforced) {
   }
 
   const useMagic = shouldUseMagicAttack(stats.weaponType);
-  const isWeapon = isWeaponType(stats.weaponType);
-  const weaponSet = detectWeaponSet(lines.join(' '));
+  const isWeapon = isWeaponType(lines.join(' ') + ' ' + stats.weaponType);
+  const weaponSet = detectWeaponSet(lines.join(' ') + ' ' + stats.weaponType);
   const manualSetPrompt = isWeapon && !weaponSet;
 
   const flameScore = calculateFlameScore(stats, mainStat, subStat, useMagic, isWeapon);

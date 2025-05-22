@@ -84,6 +84,10 @@ function getWeaponTier(flameVal, base, set) {
 
   const setTable = tables[set];
   const row = setTable?.[parseInt(base)];
+
+  console.log(`🧪 getWeaponTier() → set: ${set}, base: ${base}, flameVal: ${flameVal}`);
+  console.log(`🧪 row:`, row);
+
   if (!row) return null;
   for (let i = row.length - 1; i >= 0; i--) {
     if (flameVal >= row[i]) return `T${i + 3}`;

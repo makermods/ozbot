@@ -1,4 +1,4 @@
-// ✅ PATCHED flamescore.js WITH TIMESTAMPED DEBUG LOGS
+// ✅ PATCHED flamescore.js WITH RELIABLE BASE ATTACK EXTRACTION + TIMESTAMPED DEBUG LOGS
 const Tesseract = require('tesseract.js');
 const Jimp = require('jimp');
 
@@ -33,6 +33,10 @@ const MANUAL_LABELS = {
   attack: 'Attack Power', magic: 'Magic Attack',
   boss: 'Boss Damage', allStatPercent: 'All Stats %'
 };
+
+function log(msg) {
+  console.log(`[${new Date().toISOString()}] ${msg}`);
+}
 
 function getManualPromptLabel(statKey) {
   return MANUAL_LABELS[statKey] || statKey;
@@ -84,10 +88,6 @@ function getWeaponTier(flameVal, base, set) {
 
   const setTable = tables[set];
   const row = setTable?.[parseInt(base)];
-
-  console.log(`[${new Date().toISOString()}] 🧪 getWeaponTier() → set: ${set}, base: ${base}, flameVal: ${flameVal}`);
-  console.log(`[${new Date().toISOString()}] 🧪 row:`, row);
-
   if (!row) return null;
   for (let i = row.length - 1; i >= 0; i--) {
     if (flameVal >= row[i]) return `T${i + 3}`;
@@ -157,12 +157,18 @@ module.exports = {
       else if ((lc.includes('maxhp') || lc.includes('max hp')) && lc.includes('+')) parseStatLine(line, 'HP');
       else if (lc.includes('attack power') && lc.includes('+')) {
         parseStatLine(line, 'attack');
-        const base = line.match(/\((\d+) \+ \d+/);
-        if (base) stats.baseAttack = parseInt(base[1]);
+        const base = line.match(/\(?\s*(\d+)\s*\+\s*\d+/);
+        if (base) {
+          stats.baseAttack = parseInt(base[1]);
+          log(`✅ [ATK] Extracted baseAttack: ${stats.baseAttack}`);
+        }
       } else if (lc.includes('magic attack') && lc.includes('+')) {
         parseStatLine(line, 'magic');
-        const base = line.match(/\((\d+) \+ \d+/);
-        if (base) stats.baseAttack = parseInt(base[1]);
+        const base = line.match(/\(?\s*(\d+)\s*\+\s*\d+/);
+        if (base) {
+          stats.baseAttack = parseInt(base[1]);
+          log(`✅ [MATT] Extracted baseAttack: ${stats.baseAttack}`);
+        }
       } else if (lc.includes('all stats') && lc.includes('+')) parseStatLine(line, 'allStatPercent');
       else if (lc.includes('boss damage') && lc.includes('+')) parseStatLine(line, 'boss');
       else if (/Type: (.+)/i.test(line)) {

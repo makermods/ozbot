@@ -1,4 +1,4 @@
-// ✅ PATCHED flamescore.js
+// ✅ PATCHED flamescore.js WITH TIMESTAMPED DEBUG LOGS
 const Tesseract = require('tesseract.js');
 const Jimp = require('jimp');
 
@@ -85,8 +85,8 @@ function getWeaponTier(flameVal, base, set) {
   const setTable = tables[set];
   const row = setTable?.[parseInt(base)];
 
-  console.log(`🧪 getWeaponTier() → set: ${set}, base: ${base}, flameVal: ${flameVal}`);
-  console.log(`🧪 row:`, row);
+  console.log(`[${new Date().toISOString()}] 🧪 getWeaponTier() → set: ${set}, base: ${base}, flameVal: ${flameVal}`);
+  console.log(`[${new Date().toISOString()}] 🧪 row:`, row);
 
   if (!row) return null;
   for (let i = row.length - 1; i >= 0; i--) {

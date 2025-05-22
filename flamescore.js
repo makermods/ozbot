@@ -174,6 +174,8 @@ async function analyzeFlame(imageBuffer, mainStat, subStat, isStarforced) {
     }
   };
 
+  log(`🧪 [PARSED BOSS] Flame value for boss damage: \n${stats.boss}`);
+
   for (const line of lines) {
     const lc = line.toLowerCase();
     if (lc.includes('str') && lc.includes('+')) parseStatLine(line, 'STR');

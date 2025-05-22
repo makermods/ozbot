@@ -1,4 +1,4 @@
-// ✅ FULLY PATCHED index.js WITH TIMESTAMPED DEBUG LOGS
+// ✅ FULLY PATCHED index.js WITH TIMESTAMPED DEBUG LOGS + MANUAL SET HANDLING
 require('dotenv').config();
 const {
   Client,
@@ -169,55 +169,72 @@ client.on(Events.InteractionCreate, async (interaction) => {
       return;
     }
 
-    // ✅ Recalculate tier and score after auto-detected weapon set
+    await postFlameResult(interaction, result, session);
+  } else if (step === 'weaponset') {
+    await interaction.deferReply({ ephemeral: false });
+
+    const weaponSet = value.toLowerCase();
+    const result = session.result;
     const stats = result.stats;
-    const mainStat = result.mainStat;
-    const subStat = result.subStat;
-    const useMagic = result.useMagic;
-    const baseAtk = stats.baseAttack;
-    const weaponSet = result.weaponSetDetected;
-    const isWeapon = true;
 
-    const updatedTiers = getStatTierBreakdown(
-      stats, mainStat, subStat, useMagic,
-      stats.levelRequirement || 0,
-      isWeapon,
-      weaponSet,
-      baseAtk
-    );
+    result.weaponSetDetected = weaponSet;
 
-    const flameScore = calculateFlameScore(stats, mainStat, subStat, useMagic, isWeapon);
+    await postFlameResult(interaction, result, session);
+  }
+});
 
-    log(`Posting result: set=${weaponSet}, baseAtk=${baseAtk}, score=${flameScore}`);
+async function postFlameResult(interaction, result, session) {
+  const stats = result.stats;
+  const mainStat = result.mainStat;
+  const subStat = result.subStat;
+  const useMagic = result.useMagic;
+  const baseAtk = stats.baseAttack;
+  const weaponSet = result.weaponSetDetected;
+  const isWeapon = true;
 
-    const statLine = `Main Stat: ${stats[mainStat]} | Sub Stat: ${stats[subStat]}` +
-      `${useMagic ? ` | MATT: ${stats.magic}` : ` | ATK: ${stats.attack}`} | All Stat%: ${stats.allStatPercent} | Boss Damage: ${stats.boss}%`;
+  const updatedTiers = getStatTierBreakdown(
+    stats, mainStat, subStat, useMagic,
+    stats.levelRequirement || 0,
+    isWeapon,
+    weaponSet,
+    baseAtk
+  );
 
-    const tierLine = updatedTiers.join(', ');
-    const scoreLine = `**Flame Score:** ${flameScore} (${mainStat})`;
+  const flameScore = calculateFlameScore(stats, mainStat, subStat, useMagic, isWeapon);
 
-    const resultMsg = await interaction.followUp({
-      content: `**Flame Stats:**
+  log(`Posting result: set=${weaponSet}, baseAtk=${baseAtk}, score=${flameScore}`);
+
+  const statLine = `Main Stat: ${stats[mainStat]} | Sub Stat: ${stats[subStat]}` +
+    `${useMagic ? ` | MATT: ${stats.magic}` : ` | ATK: ${stats.attack}`} | All Stat%: ${stats.allStatPercent} | Boss Damage: ${stats.boss}%`;
+
+  const tierLine = result.tiers.join(', ');
+  const scoreLine = `**Flame Score:** ${flameScore} (${mainStat})`;
+
+  const msg = await interaction.followUp({
+    content: `**Flame Stats:**
 ${statLine}
 
 **Flame Tier:**
 ${tierLine}
 
 ${scoreLine}`,
-      ephemeral: false
-    });
+    ephemeral: false
+  });
 
-    setTimeout(async () => {
-      try {
-        const msg = await interaction.channel.messages.fetch(resultMsg.id);
-        if (msg) await msg.delete();
-        const userMsg = await interaction.channel.messages.fetch(session.originalImageId);
-        if (userMsg) await userMsg.delete();
-      } catch {}
-      if (fs.existsSync(session.imagePath)) fs.unlinkSync(session.imagePath);
-      userSessions.delete(interaction.user.id);
-    }, 30000);
-  }
-});
+  try {
+    const promptMsg = await interaction.channel.messages.fetch(session.messageId);
+    if (promptMsg) await promptMsg.delete();
+  } catch {}
+
+  setTimeout(async () => {
+    try {
+      const userMsg = await interaction.channel.messages.fetch(session.originalImageId);
+      if (userMsg) await userMsg.delete();
+      if (msg) await msg.delete();
+    } catch {}
+    if (fs.existsSync(session.imagePath)) fs.unlinkSync(session.imagePath);
+    userSessions.delete(interaction.user.id);
+  }, 30000);
+}
 
 client.login(process.env.DISCORD_TOKEN);

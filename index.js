@@ -143,7 +143,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
     if (result.manualSetPrompt) {
       session.result = result;
-      session.step = 'weaponSet';
+      session.step = 'weaponset';
 
       const row = new ActionRowBuilder()
         .addComponents([
@@ -162,23 +162,15 @@ client.on(Events.InteractionCreate, async (interaction) => {
       return;
     }
 
-    // ✅ Recalculate tier and score after auto-detected weapon set
     const stats = result.stats;
     const mainStat = result.mainStat;
     const subStat = result.subStat;
     const useMagic = result.useMagic;
-    const baseAtk = stats.baseAttack;
+    const baseAtk = parseInt(stats.baseAttack);
     const weaponSet = result.weaponSetDetected;
     const isWeapon = true;
 
-    const updatedTiers = getStatTierBreakdown(
-      stats, mainStat, subStat, useMagic,
-      stats.levelRequirement || 0,
-      isWeapon,
-      weaponSet,
-      baseAtk
-    );
-
+    const updatedTiers = getStatTierBreakdown(stats, mainStat, subStat, useMagic, stats.levelRequirement || 0, isWeapon, weaponSet, baseAtk);
     const flameScore = calculateFlameScore(stats, mainStat, subStat, useMagic, isWeapon);
 
     const statLine = `Main Stat: ${stats[mainStat]} | Sub Stat: ${stats[subStat]}` +
@@ -188,13 +180,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     const scoreLine = `**Flame Score:** ${flameScore} (${mainStat})`;
 
     const resultMsg = await interaction.followUp({
-      content: `**Flame Stats:**
-${statLine}
-
-**Flame Tier:**
-${tierLine}
-
-${scoreLine}`,
+      content: `**Flame Stats:**\n${statLine}\n\n**Flame Tier:**\n${tierLine}\n\n${scoreLine}`,
       ephemeral: false
     });
 
@@ -209,61 +195,47 @@ ${scoreLine}`,
       userSessions.delete(interaction.user.id);
     }, 30000);
 
-} else if (step === 'weaponset') {
-  await interaction.deferReply({ ephemeral: false }); // required fix
+  } else if (step === 'weaponset') {
+    await interaction.deferReply({ ephemeral: false });
 
-  const weaponSet = value.toLowerCase();
-  const result = session.result;
+    const weaponSet = value.toLowerCase();
+    const result = session.result;
 
-  const stats = result.stats;
-  const useMagic = result.useMagic;
-  const mainStat = result.mainStat;
-  const subStat = result.subStat;
-  const baseAtk = stats.baseAttack;
+    const stats = result.stats;
+    const useMagic = result.useMagic;
+    const mainStat = result.mainStat;
+    const subStat = result.subStat;
+    const baseAtk = parseInt(stats.baseAttack);
 
-  // ✅ Recalculate
-  const updatedTiers = getStatTierBreakdown(
-    stats, mainStat, subStat, useMagic,
-    stats.levelRequirement || 0,
-    true, // isWeapon
-    weaponSet,
-    baseAtk
-  );
+    const updatedTiers = getStatTierBreakdown(stats, mainStat, subStat, useMagic, stats.levelRequirement || 0, true, weaponSet, baseAtk);
+    const flameScore = calculateFlameScore(stats, mainStat, subStat, useMagic, true);
 
-  const flameScore = calculateFlameScore(stats, mainStat, subStat, useMagic, true);
+    const statLine = `Main Stat: ${stats[mainStat]} | Sub Stat: ${stats[subStat]}` +
+      `${useMagic ? ` | MATT: ${stats.magic}` : ` | ATK: ${stats.attack}`} | All Stat%: ${stats.allStatPercent} | Boss Damage: ${stats.boss}%`;
 
-  const statLine = `Main Stat: ${stats[mainStat]} | Sub Stat: ${stats[subStat]}` +
-    `${useMagic ? ` | MATT: ${stats.magic}` : ` | ATK: ${stats.attack}`} | All Stat%: ${stats.allStatPercent} | Boss Damage: ${stats.boss}%`;
+    const tierLine = updatedTiers.join(', ');
+    const scoreLine = `**Flame Score:** ${flameScore} (${mainStat})`;
 
-  const tierLine = updatedTiers.join(', ');
-  const scoreLine = `**Flame Score:** ${flameScore} (${mainStat})`;
+    const msg = await interaction.followUp({
+      content: `**Flame Stats:**\n${statLine}\n\n**Flame Tier:**\n${tierLine}\n\n${scoreLine}`,
+      ephemeral: false
+    });
 
-  const msg = await interaction.followUp({
-    content: `**Flame Stats:**
-${statLine}
-
-**Flame Tier:**
-${tierLine}
-
-${scoreLine}`,
-    ephemeral: false
-  });
-
-  try {
-    const promptMsg = await interaction.channel.messages.fetch(session.messageId);
-    if (promptMsg) await promptMsg.delete();
-  } catch {}
-
-  setTimeout(async () => {
     try {
-      const userMsg = await interaction.channel.messages.fetch(session.originalImageId);
-      if (userMsg) await userMsg.delete();
-      if (msg) await msg.delete();
+      const promptMsg = await interaction.channel.messages.fetch(session.messageId);
+      if (promptMsg) await promptMsg.delete();
     } catch {}
-    if (fs.existsSync(session.imagePath)) fs.unlinkSync(session.imagePath);
-    userSessions.delete(interaction.user.id);
-  }, 30000);
-}
+
+    setTimeout(async () => {
+      try {
+        const userMsg = await interaction.channel.messages.fetch(session.originalImageId);
+        if (userMsg) await userMsg.delete();
+        if (msg) await msg.delete();
+      } catch {}
+      if (fs.existsSync(session.imagePath)) fs.unlinkSync(session.imagePath);
+      userSessions.delete(interaction.user.id);
+    }, 30000);
+  }
 });
 
 client.login(process.env.DISCORD_TOKEN);

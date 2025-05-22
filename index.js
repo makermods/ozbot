@@ -162,13 +162,23 @@ client.on(Events.InteractionCreate, async (interaction) => {
       return;
     }
 
-    const { stats, tiers, flameScore, mainStat, subStat, useMagic } = result;
+    // ✅ NEW: Use weapon set for accurate tier calculation
+    const updatedTiers = getStatTierBreakdown(
+      result.stats,
+      result.mainStat,
+      result.subStat,
+      result.useMagic,
+      result.stats.levelRequirement || 0,
+      true, // isWeapon
+      result.weaponSetDetected,
+      result.stats.baseAttack
+    );
 
-    const statLine = `Main Stat: ${stats[mainStat]} | Sub Stat: ${stats[subStat]}` +
-      `${useMagic ? ` | MATT: ${stats.magic}` : ` | ATK: ${stats.attack}`} | All Stat%: ${stats.allStatPercent} | Boss Damage: ${stats.boss}%`;
+    const statLine = `Main Stat: ${result.stats[result.mainStat]} | Sub Stat: ${result.stats[result.subStat]}` +
+      `${result.useMagic ? ` | MATT: ${result.stats.magic}` : ` | ATK: ${result.stats.attack}`} | All Stat%: ${result.stats.allStatPercent} | Boss Damage: ${result.stats.boss}%`;
 
-    const tierLine = tiers.join(', ');
-    const scoreLine = `**Flame Score:** ${flameScore} (${mainStat})`;
+    const tierLine = updatedTiers.join(', ');
+    const scoreLine = `**Flame Score:** ${result.flameScore} (${result.mainStat})`;
 
     const resultMsg = await interaction.followUp({
       content: `**Flame Stats:**

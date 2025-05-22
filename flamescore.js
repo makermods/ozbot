@@ -181,6 +181,8 @@ module.exports = {
     const useMagic = shouldUseMagicAttack(stats.weaponType);
     const isWeapon = isWeaponType(stats.weaponType);
     const weaponSet = detectWeaponSet(lines.join(' '));
+    const manualSetPrompt = isWeapon && !weaponSet;
+
     const flameScore = calculateFlameScore(stats, mainStat, subStat, useMagic, isWeapon);
     const tiers = getStatTierBreakdown(stats, mainStat, subStat, useMagic, equipLevel, isWeapon, weaponSet, stats.baseAttack);
 
@@ -192,7 +194,7 @@ module.exports = {
       mainStat,
       subStat,
       manualInputRequired: manualInputRequired.map(key => ({ key, label: getManualPromptLabel(key) })),
-      manualSetPrompt: isWeapon && !weaponSet,
+      manualSetPrompt,
       weaponSetDetected: weaponSet
     };
   }

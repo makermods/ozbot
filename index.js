@@ -11,7 +11,7 @@ const {
 const fs = require('fs');
 const path = require('path');
 const fetch = require('node-fetch');
-const { analyzeFlame } = require('./flamescore');
+const { analyzeFlame, getStatTierBreakdown } = require('./flamescore');
 
 const client = new Client({
   intents: [
@@ -141,6 +141,27 @@ client.on(Events.InteractionCreate, async (interaction) => {
       return;
     }
 
+    if (result.manualSetPrompt) {
+      session.result = result;
+      session.step = 'weaponSet';
+
+      const row = new ActionRowBuilder()
+        .addComponents([
+          new ButtonBuilder().setCustomId('weaponset_absolab').setLabel('AbsoLab').setStyle(ButtonStyle.Primary),
+          new ButtonBuilder().setCustomId('weaponset_arcane').setLabel('Arcane').setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder().setCustomId('weaponset_genesis').setLabel('Genesis').setStyle(ButtonStyle.Success)
+        ]);
+
+      const prompt = await interaction.followUp({
+        content: 'Automatic weapon set detection failed. Please select your weapon set:',
+        components: [row],
+        ephemeral: false
+      });
+
+      session.messageId = prompt.id;
+      return;
+    }
+
     const { stats, tiers, flameScore, mainStat, subStat, useMagic } = result;
 
     const statLine = `Main Stat: ${stats[mainStat]} | Sub Stat: ${stats[subStat]}` +
@@ -166,6 +187,55 @@ ${scoreLine}`,
         if (msg) await msg.delete();
         const userMsg = await interaction.channel.messages.fetch(session.originalImageId);
         if (userMsg) await userMsg.delete();
+      } catch {}
+      if (fs.existsSync(session.imagePath)) fs.unlinkSync(session.imagePath);
+      userSessions.delete(interaction.user.id);
+    }, 30000);
+
+  } else if (step === 'weaponset') {
+    const weaponSet = value.toLowerCase();
+    const result = session.result;
+
+    const stats = result.stats;
+    const useMagic = result.useMagic;
+    const flameScore = result.flameScore;
+    const mainStat = result.mainStat;
+    const subStat = result.subStat;
+    const baseAtk = stats.baseAttack;
+
+    const updatedTiers = getStatTierBreakdown(
+      stats, mainStat, subStat, useMagic,
+      stats.levelRequirement || 0, true,
+      weaponSet, baseAtk
+    );
+
+    const statLine = `Main Stat: ${stats[mainStat]} | Sub Stat: ${stats[subStat]}` +
+      `${useMagic ? ` | MATT: ${stats.magic}` : ` | ATK: ${stats.attack}`} | All Stat%: ${stats.allStatPercent} | Boss Damage: ${stats.boss}%`;
+
+    const tierLine = updatedTiers.join(', ');
+    const scoreLine = `**Flame Score:** ${flameScore} (${mainStat})`;
+
+    const msg = await interaction.followUp({
+      content: `**Flame Stats:**
+${statLine}
+
+**Flame Tier:**
+${tierLine}
+
+${scoreLine}`,
+      ephemeral: false
+    });
+
+    try {
+      const promptMsg = await interaction.channel.messages.fetch(session.messageId);
+      if (promptMsg) await promptMsg.delete();
+    } catch {}
+
+    setTimeout(async () => {
+      try {
+        const userMsg = await interaction.channel.messages.fetch(session.originalImageId);
+        if (userMsg) await userMsg.delete();
+        if (msg) await msg.delete();
       } catch {}
       if (fs.existsSync(session.imagePath)) fs.unlinkSync(session.imagePath);
       userSessions.delete(interaction.user.id);

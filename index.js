@@ -12,6 +12,7 @@ const fs = require('fs');
 const path = require('path');
 const fetch = require('node-fetch');
 const { analyzeFlame, getStatTierBreakdown } = require('./flamescore');
+const { calculateFlameScore } = require('./flamescore'); // Add this line
 
 const client = new Client({
   intents: [
@@ -162,23 +163,30 @@ client.on(Events.InteractionCreate, async (interaction) => {
       return;
     }
 
-    // ✅ NEW: Use weapon set for accurate tier calculation
+    // ✅ Recalculate tier and score after auto-detected weapon set
+    const stats = result.stats;
+    const mainStat = result.mainStat;
+    const subStat = result.subStat;
+    const useMagic = result.useMagic;
+    const baseAtk = stats.baseAttack;
+    const weaponSet = result.weaponSetDetected;
+    const isWeapon = true;
+
     const updatedTiers = getStatTierBreakdown(
-      result.stats,
-      result.mainStat,
-      result.subStat,
-      result.useMagic,
-      result.stats.levelRequirement || 0,
-      true, // isWeapon
-      result.weaponSetDetected,
-      result.stats.baseAttack
+      stats, mainStat, subStat, useMagic,
+      stats.levelRequirement || 0,
+      isWeapon,
+      weaponSet,
+      baseAtk
     );
 
-    const statLine = `Main Stat: ${result.stats[result.mainStat]} | Sub Stat: ${result.stats[result.subStat]}` +
-      `${result.useMagic ? ` | MATT: ${result.stats.magic}` : ` | ATK: ${result.stats.attack}`} | All Stat%: ${result.stats.allStatPercent} | Boss Damage: ${result.stats.boss}%`;
+    const flameScore = calculateFlameScore(stats, mainStat, subStat, useMagic, isWeapon);
+
+    const statLine = `Main Stat: ${stats[mainStat]} | Sub Stat: ${stats[subStat]}` +
+      `${useMagic ? ` | MATT: ${stats.magic}` : ` | ATK: ${stats.attack}`} | All Stat%: ${stats.allStatPercent} | Boss Damage: ${stats.boss}%`;
 
     const tierLine = updatedTiers.join(', ');
-    const scoreLine = `**Flame Score:** ${result.flameScore} (${result.mainStat})`;
+    const scoreLine = `**Flame Score:** ${flameScore} (${mainStat})`;
 
     const resultMsg = await interaction.followUp({
       content: `**Flame Stats:**
@@ -249,69 +257,6 @@ ${scoreLine}`,
       } catch {}
       if (fs.existsSync(session.imagePath)) fs.unlinkSync(session.imagePath);
       userSessions.delete(interaction.user.id);
-    }, 30000);
-  }
-});
-
-client.on(Events.MessageCreate, async (message) => {
-  const session = userSessions.get(message.author.id);
-  if (!session || session.step !== 'manual') return;
-
-  const statKey = session.currentManual.key;
-  const value = parseInt(message.content);
-
-  if (isNaN(value)) {
-    await message.reply({ content: 'Please enter a valid number.', ephemeral: true });
-    return;
-  }
-
-  session.manualStats[statKey] = value;
-  const nextIndex = session.pendingInputs.findIndex(s => s.key === statKey) + 1;
-
-  setTimeout(async () => {
-    try {
-      const prompt = await message.channel.messages.fetch(session.lastPromptId);
-      if (prompt) await prompt.delete();
-      await message.delete();
-    } catch {}
-  }, 2000);
-
-  if (nextIndex < session.pendingInputs.length) {
-    const nextStat = session.pendingInputs[nextIndex];
-    session.currentManual = nextStat;
-
-    const nextPrompt = await message.channel.send({
-      content: `Please enter the flame value for **${nextStat.label}**:`
-    });
-
-    session.lastPromptId = nextPrompt.id;
-  } else {
-    const result = session.result;
-    const stats = { ...result.stats, ...session.manualStats };
-    const statLine = `Main Stat: ${stats[result.mainStat]} | Sub Stat: ${stats[result.subStat]}` +
-      `${result.useMagic ? ` | MATT: ${stats.magic}` : ` | ATK: ${stats.attack}`} | All Stat%: ${stats.allStatPercent} | Boss Damage: ${stats.boss}%`;
-
-    const tierLine = result.tiers.join(', ');
-    const scoreLine = `**Flame Score:** ${result.flameScore} (${result.mainStat})`;
-
-    const reply = await message.channel.send({
-      content: `**Flame Stats:**
-${statLine}
-
-**Flame Tier:**
-${tierLine}
-
-${scoreLine}`
-    });
-
-    setTimeout(async () => {
-      try {
-        const userMsg = await message.channel.messages.fetch(session.originalImageId);
-        if (userMsg) await userMsg.delete();
-        if (reply) await reply.delete();
-      } catch {}
-      if (fs.existsSync(session.imagePath)) fs.unlinkSync(session.imagePath);
-      userSessions.delete(message.author.id);
     }, 30000);
   }
 });

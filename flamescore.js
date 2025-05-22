@@ -200,5 +200,6 @@ async function analyzeFlame(imageBuffer, mainStat, subStat, isStarforced) {
 
 module.exports = {
   analyzeFlame,
-  getStatTierBreakdown
+  getStatTierBreakdown,
+  calculateFlameScore
 };

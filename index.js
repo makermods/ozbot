@@ -178,6 +178,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
     const stats = result.stats;
 
     result.weaponSetDetected = weaponSet;
+    result.stats.baseAttack = session.result.stats.baseAttack;
+
 
     await postFlameResult(interaction, result, session);
   }

@@ -1,3 +1,4 @@
+// ✅ PATCHED flamescore.js WITH FULL TIER TABLES + LOGGING
 const Tesseract = require('tesseract.js');
 const Jimp = require('jimp');
 
@@ -49,7 +50,7 @@ function getTier(value, table) {
 }
 
 function isWeaponType(text) {
-  return /claw|staff|sword|bow|dagger|rod|gun|cannon|knuckle|katana|polearm|spear|crossbow|weapon/i.test(text);
+  return /claw|staff|sword|bow|dagger|rod|gun|cannon|knuckle|katana|polearm|spear|crossbow|axe|weapon/i.test(text);
 }
 
 function detectWeaponSet(text) {
@@ -109,8 +110,7 @@ function getWeaponTier(flameVal, base, set) {
       241: [37, 54, 73, 97, 124], 245: [37, 54, 75, 98, 126]
     }
   };
-  const setTable = tables[set];
-  const row = setTable?.[parseInt(base)];
+  const row = tables[set]?.[parseInt(base)];
   if (!row) return null;
   for (let i = row.length - 1; i >= 0; i--) {
     if (flameVal >= row[i]) return `T${i + 3}`;
@@ -146,6 +146,7 @@ async function analyzeFlame(imageBuffer, mainStat, subStat, isStarforced) {
 
   const { data: { text } } = await Tesseract.recognize(await image.getBufferAsync(Jimp.MIME_PNG), 'eng');
   log(`📄 [OCR RAW TEXT] ${text}`);
+
   const stats = { STR: 0, DEX: 0, INT: 0, LUK: 0, HP: 0, attack: 0, magic: 0, boss: 0, allStatPercent: 0, weaponType: '', baseAttack: 0 };
   let equipLevel = 0;
   const manualInputRequired = [];
@@ -204,8 +205,8 @@ async function analyzeFlame(imageBuffer, mainStat, subStat, isStarforced) {
   }
 
   const useMagic = shouldUseMagicAttack(stats.weaponType);
-  const isWeapon = isWeaponType(fullText);
-  const weaponSet = detectWeaponSet(fullText);
+  const isWeapon = isWeaponType(text);
+  const weaponSet = detectWeaponSet(text);
   const manualSetPrompt = isWeapon && !weaponSet;
 
   const flameScore = calculateFlameScore(stats, mainStat, subStat, useMagic, isWeapon);

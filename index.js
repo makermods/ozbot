@@ -211,6 +211,8 @@ ${scoreLine}`,
     }, 30000);
 
   } else if (step === 'weaponset') {
+    await interaction.deferReply({ ephemeral: false });
+
     const weaponSet = value.toLowerCase();
     const result = session.result;
 

@@ -1,4 +1,4 @@
-// ✅ FULLY PATCHED index.js WITH TIMESTAMPED DEBUG LOGS + MANUAL SET HANDLING
+// ✅ FULLY PATCHED index.js WITH TIMESTAMPED DEBUG LOGS + MANUAL SET HANDLING + baseAtk FIX
 require('dotenv').config();
 const {
   Client,
@@ -178,8 +178,15 @@ client.on(Events.InteractionCreate, async (interaction) => {
     const stats = result.stats;
 
     result.weaponSetDetected = weaponSet;
-    result.stats.baseAttack = session.result.stats.baseAttack;
 
+    // ✅ Ensure baseAttack is preserved in case it got lost
+    if (!stats.baseAttack || stats.baseAttack === 0) {
+      const parsed = /\((\d+) \+/.exec(interaction.message.content);
+      if (parsed) {
+        result.stats.baseAttack = parseInt(parsed[1]);
+        log(`✅ Patched baseAttack from message content: ${result.stats.baseAttack}`);
+      }
+    }
 
     await postFlameResult(interaction, result, session);
   }
@@ -209,7 +216,7 @@ async function postFlameResult(interaction, result, session) {
   const statLine = `Main Stat: ${stats[mainStat]} | Sub Stat: ${stats[subStat]}` +
     `${useMagic ? ` | MATT: ${stats.magic}` : ` | ATK: ${stats.attack}`} | All Stat%: ${stats.allStatPercent} | Boss Damage: ${stats.boss}%`;
 
-  const tierLine = result.tiers.join(', ');
+  const tierLine = updatedTiers.join(', ');
   const scoreLine = `**Flame Score:** ${flameScore} (${mainStat})`;
 
   const msg = await interaction.followUp({

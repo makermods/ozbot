@@ -197,6 +197,8 @@ module.exports = {
         if (match) stats.weaponType = match[1];
       } else if (/REQ.*LEV.*[:\s]+(\d+)/i.test(line)) {
         equipLevel = parseInt(line.match(/REQ.*LEV.*[:\s]+(\d+)/i)[1]);
+        log(`📗 [LEVEL] Extracted level: ${equipLevel}`);
+
       }
     }
 

@@ -50,13 +50,15 @@ function getTier(value, table) {
 }
 
 function isWeaponType(text) {
-  return /claw|staff|sword|bow|dagger|rod|gun|cannon|knuckle|katana|polearm|spear|crossbow|axe|weapon/i.test(text);
+  const keywords = ['claw', 'staff', 'sword', 'bow', 'dagger', 'rod', 'gun', 'cannon', 'knuckle', 'katana', 'polearm', 'spear', 'crossbow', 'axe', 'weapon'];
+  return keywords.some(kw => text.toLowerCase().includes(kw));
 }
 
 function detectWeaponSet(text) {
-  for (const [set, regex] of Object.entries(WEAPON_SETS)) {
-    if (regex.test(text)) return set;
-  }
+  text = text.toLowerCase();
+  if (text.includes('genesis')) return 'genesis';
+  if (text.includes('arcane')) return 'arcane';
+  if (text.includes('absolab')) return 'absolab';
   return null;
 }
 
@@ -145,7 +147,7 @@ async function analyzeFlame(imageBuffer, mainStat, subStat, isStarforced) {
   image.resize(image.bitmap.width * 2, image.bitmap.height * 2).grayscale().contrast(0.5).normalize().brightness(0.1);
 
   const { data: { text } } = await Tesseract.recognize(await image.getBufferAsync(Jimp.MIME_PNG), 'eng');
-  log(`📄 [OCR RAW TEXT] ${text}`);
+  log(`🧾 [OCR] Full extracted text:\n${text}`);
 
   const stats = { STR: 0, DEX: 0, INT: 0, LUK: 0, HP: 0, attack: 0, magic: 0, boss: 0, allStatPercent: 0, weaponType: '', baseAttack: 0 };
   let equipLevel = 0;

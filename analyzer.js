@@ -84,16 +84,23 @@ function analyzeItem(text) {
   let mattValue = 0, baseMatt = 0;
   let bossValue = 0;
   let allStatValue = 0;
+  const statFlames = {};
 
   for (const line of statLines) {
     const valuesMatch = line.match(/\(([^)]+)\)/);
     const nums = valuesMatch ? valuesMatch[1].split('+').map(n => parseInt(n.trim())) : [];
     const lc = line.toLowerCase();
 
-    if (mainStat && lc.startsWith(mainStat.toLowerCase())) {
-      if (starforced && nums.length === 3) mainStatValue = nums[1];
-      else if (nums.length === 2) mainStatValue = nums[1];
+    for (const stat of ['str', 'dex', 'int', 'luk']) {
+      if (lc.startsWith(stat)) {
+        const flame = nums.length === 3 ? nums[1] : nums.length === 2 ? nums[1] : 0;
+        statFlames[stat.toUpperCase()] = flame;
+        if (mainStat === stat.toUpperCase()) {
+          mainStatValue = flame;
+        }
+      }
     }
+
     if (lc.startsWith('att') || (lc.includes('attack') && !lc.includes('magic'))) {
       if (starforced && nums.length === 3) [baseAtt, attValue] = [nums[0], nums[1]];
       else if (nums.length === 2) [baseAtt, attValue] = [nums[0], nums[1]];
@@ -113,6 +120,15 @@ function analyzeItem(text) {
       const values = match ? match[1].split('+').map(s => parseInt(s.replace('%', '').trim())) : [];
       if (values.length >= 2) allStatValue = values[1];
       else if (values.length === 1) allStatValue = values[0];
+    }
+  }
+
+  if (!isWeapon && !mainStat) {
+    const sorted = Object.entries(statFlames).sort((a, b) => b[1] - a[1]);
+    if (sorted.length && sorted[0][1] > 0) {
+      mainStat = sorted[0][0];
+      mainStatValue = sorted[0][1];
+      logger.log(`🧠 Fallback Main Stat Detected by Flame Value: ${mainStat}`);
     }
   }
 
@@ -156,7 +172,7 @@ function analyzeItem(text) {
     allStatValue,
     allStatTier,
     mainStatTier,
-    weaponType: itemCategory || (isWeapon ? (isMATTWeapon ? 'MATT' : 'ATT') : 'No')
+    weaponType: isWeapon ? (itemCategory || (isMATTWeapon ? 'MATT' : 'ATT')) : 'No'
   };
 }
 

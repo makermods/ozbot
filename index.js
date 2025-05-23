@@ -30,7 +30,7 @@ client.on(Events.MessageCreate, async message => {
     const analysis = await analyzeItem(ocrText);
 
     const flameStats = [];
-    if (analysis.mainStatValue > 0) flameStats.push(`Main Stat: ${analysis.mainStatValue}`);
+    flameStats.push(`Main Stat: ${analysis.mainStatValue}`); // Always include main stat
     if (analysis.attValue > 0) flameStats.push(`ATT: ${analysis.attValue}`);
     if (analysis.mattValue > 0) flameStats.push(`MATT: ${analysis.mattValue}`);
     if (analysis.bossValue > 0) flameStats.push(`Boss: ${analysis.bossValue}%`);
@@ -52,7 +52,7 @@ client.on(Events.MessageCreate, async message => {
         { name: 'Starforced', value: `${analysis.starforced}`, inline: true },
         { name: 'Weapon Type', value: analysis.weaponType, inline: true },
         { name: '​', value: '​' },
-        { name: '🔥 Flame Stats', value: flameStats.length ? flameStats.join('\n') : 'None' },
+        { name: '🔥 Flame Stats', value: flameStats.join('\n') },
         { name: '📊 Flame Tiers', value: flameTiers.length ? flameTiers.join('\n') : 'None' }
       )
       .setTimestamp();

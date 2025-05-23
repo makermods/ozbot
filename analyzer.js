@@ -90,11 +90,11 @@ function analyzeItem(text) {
     const nums = valuesMatch ? valuesMatch[1].split('+').map(n => parseInt(n.trim())) : [];
     const lc = line.toLowerCase();
 
-    if (mainStat && lc.match(new RegExp(`^${mainStat.toLowerCase()}\s?[=:+]`))) {
+    if (mainStat && lc.startsWith(mainStat.toLowerCase())) {
       if (starforced && nums.length === 3) mainStatValue = nums[1];
       else if (nums.length === 2) mainStatValue = nums[1];
     }
-    if (lc.includes('attack') && !lc.includes('magic')) {
+    if (lc.startsWith('att') || (lc.includes('attack') && !lc.includes('magic'))) {
       if (starforced && nums.length === 3) [baseAtt, attValue] = [nums[0], nums[1]];
       else if (nums.length === 2) [baseAtt, attValue] = [nums[0], nums[1]];
     }

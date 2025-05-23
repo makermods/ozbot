@@ -46,7 +46,6 @@ function analyzeItem(text) {
   logger.log('📊 Starting item analysis');
 
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-  const lowerText = text.toLowerCase();
 
   let reqLevel = 0;
   for (const line of lines) {
@@ -67,7 +66,7 @@ function analyzeItem(text) {
   }
   logger.log(`⭐ Main Stat: ${mainStat || 'Not found'}`);
 
-  const statLines = lines.filter(line => /\+?\d+(\s*\/\s*\d+){1,2}/.test(line) || /\(\d+\s*\+\s*\d+\s*\+\s*\d+\)/.test(line));
+  const statLines = lines.filter(line => /\+?\d+.*\(.+\)/.test(line));
   const starforced = statLines.some(line => (line.match(/\(/g) || []).length && (line.match(/\+/g) || []).length >= 3);
   logger.log(`🌟 Starforced: ${starforced}`);
 
@@ -87,30 +86,31 @@ function analyzeItem(text) {
   let allStatValue = 0;
 
   for (const line of statLines) {
-    if (mainStat && line.includes(mainStat)) {
-      const nums = line.match(/\d+/g).map(Number);
+    const valuesMatch = line.match(/\(([^)]+)\)/);
+    const nums = valuesMatch ? valuesMatch[1].split('+').map(n => parseInt(n.trim())) : [];
+    const lc = line.toLowerCase();
+
+    if (mainStat && lc.startsWith(mainStat.toLowerCase())) {
       if (starforced && nums.length === 3) mainStatValue = nums[1];
-      else if (!starforced && nums.length === 2) mainStatValue = nums[1];
+      else if (nums.length === 2) mainStatValue = nums[1];
     }
-    if (line.toLowerCase().includes('attack') && !line.toLowerCase().includes('magic')) {
-      const nums = line.match(/\d+/g).map(Number);
+    if (lc.includes('attack') && !lc.includes('magic')) {
       if (starforced && nums.length === 3) [baseAtt, attValue] = [nums[0], nums[1]];
-      else if (!starforced && nums.length === 2) [baseAtt, attValue] = [nums[0], nums[1]];
+      else if (nums.length === 2) [baseAtt, attValue] = [nums[0], nums[1]];
     }
-    if (line.toLowerCase().includes('magic') || line.toLowerCase().includes('m.att')) {
-      const nums = line.match(/\d+/g).map(Number);
+    if (lc.includes('magic') || lc.includes('m.att')) {
       if (starforced && nums.length === 3) [baseMatt, mattValue] = [nums[0], nums[1]];
-      else if (!starforced && nums.length === 2) [baseMatt, mattValue] = [nums[0], nums[1]];
+      else if (nums.length === 2) [baseMatt, mattValue] = [nums[0], nums[1]];
     }
-    if (line.toLowerCase().includes('boss')) {
-      const nums = line.match(/\d+/g).map(Number);
-      if (nums.length >= 2) bossValue = nums[1];
-      else if (nums.length === 1) bossValue = nums[0];
+    if (lc.includes('boss')) {
+      const boss = line.match(/\+?\d+%/g);
+      if (boss && boss.length >= 2) bossValue = parseInt(boss[1]);
+      else if (boss && boss.length === 1) bossValue = parseInt(boss[0]);
     }
-    if (line.toLowerCase().includes('all')) {
-      const nums = line.match(/\d+/g).map(Number);
-      if (nums.length >= 2) allStatValue = nums[1];
-      else if (nums.length === 1) allStatValue = nums[0];
+    if (lc.includes('all')) {
+      const all = line.match(/\+?\d+%/g);
+      if (all && all.length >= 2) allStatValue = parseInt(all[1]);
+      else if (all && all.length === 1) allStatValue = parseInt(all[0]);
     }
   }
 

@@ -90,7 +90,7 @@ function analyzeItem(text) {
     const nums = valuesMatch ? valuesMatch[1].split('+').map(n => parseInt(n.trim())) : [];
     const lc = line.toLowerCase();
 
-    if (mainStat && lc.includes(mainStat.toLowerCase() + ':')) {
+    if (mainStat && lc.match(new RegExp(`^${mainStat.toLowerCase()}\s?[=:+]`))) {
       if (starforced && nums.length === 3) mainStatValue = nums[1];
       else if (nums.length === 2) mainStatValue = nums[1];
     }

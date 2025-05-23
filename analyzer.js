@@ -22,7 +22,8 @@ function getTier(value, table) {
 function getMainStatTier(reqLevel, flameValue) {
   for (const tier of MAIN_STAT_TIERS) {
     if (reqLevel >= tier.min && reqLevel <= tier.max) {
-      return getTier(flameValue, tier.values) - 2;
+      const rawTier = getTier(flameValue, tier.values);
+      return rawTier >= 3 ? rawTier - 2 : 0;
     }
   }
   return 0;
@@ -34,6 +35,13 @@ function getAttackTier(base, flame, categoryTable) {
   return getTier(flame, tierValues);
 }
 
+function findItemCategory(baseValue) {
+  if (Object.keys(ABSOLAB_TIERS).includes(baseValue.toString())) return 'Absolab';
+  if (Object.keys(ARCANE_TIERS).includes(baseValue.toString())) return 'Arcane';
+  if (Object.keys(GENESIS_TIERS).includes(baseValue.toString())) return 'Genesis';
+  return null;
+}
+
 function analyzeItem(text) {
   logger.log('📊 Starting item analysis');
 
@@ -42,9 +50,9 @@ function analyzeItem(text) {
 
   let reqLevel = 0;
   for (const line of lines) {
-    const match = line.match(/REQ LEV[\s:]*([0-9]+)/i);
+    const match = line.match(/REQ (LEV|LEY|LEU)[\s:]*([0-9]+)/i);
     if (match) {
-      reqLevel = parseInt(match[1]);
+      reqLevel = parseInt(match[2]);
       break;
     }
   }
@@ -59,8 +67,8 @@ function analyzeItem(text) {
   }
   logger.log(`⭐ Main Stat: ${mainStat || 'Not found'}`);
 
-  const statLines = lines.filter(line => /\+?\d+(\s*\/\s*\d+){1,2}/.test(line));
-  const starforced = statLines.some(line => line.split('/').length === 3);
+  const statLines = lines.filter(line => /\+?\d+(\s*\/\s*\d+){1,2}/.test(line) || /\(\d+\s*\+\s*\d+\s*\+\s*\d+\)/.test(line));
+  const starforced = statLines.some(line => (line.match(/\(/g) || []).length && (line.match(/\+/g) || []).length >= 3);
   logger.log(`🌟 Starforced: ${starforced}`);
 
   const isWeapon = ALL_WEAPON_KEYWORDS.some(k => text.includes(k));
@@ -71,12 +79,6 @@ function analyzeItem(text) {
     isMATTWeapon = MATT_WEAPON_KEYWORDS.some(k => text.includes(k));
     logger.log(`🔮 Magic Weapon: ${isMATTWeapon}`);
   }
-
-  let itemCategory = null;
-  if (text.includes('AbsoLab')) itemCategory = 'Absolab';
-  else if (text.includes('Arcane')) itemCategory = 'Arcane';
-  else if (text.includes('Genesis')) itemCategory = 'Genesis';
-  logger.log(`🏷️ Item Category: ${itemCategory || 'Unknown'}`);
 
   let mainStatValue = 0;
   let attValue = 0, baseAtt = 0;
@@ -111,6 +113,11 @@ function analyzeItem(text) {
       else if (nums.length === 1) allStatValue = nums[0];
     }
   }
+
+  const itemCategory = isMATTWeapon
+    ? findItemCategory(baseMatt)
+    : findItemCategory(baseAtt);
+  logger.log(`🏷️ Item Category (from base value): ${itemCategory || 'Unknown'}`);
 
   const mainStatTier = getMainStatTier(reqLevel, mainStatValue);
   const bossTier = getTier(bossValue, BOSS_TIERS);

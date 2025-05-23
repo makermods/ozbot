@@ -12,9 +12,9 @@ const {
 } = require('./tierTables');
 const logger = require('./logger');
 
-function getTier(value, table) {
+function getTier(value, table, base = 1) {
   for (let i = table.length - 1; i >= 0; i--) {
-    if (value >= table[i]) return i + 3;
+    if (value >= table[i]) return i + base;
   }
   return 0;
 }
@@ -22,8 +22,8 @@ function getTier(value, table) {
 function getMainStatTier(reqLevel, flameValue) {
   for (const tier of MAIN_STAT_TIERS) {
     if (reqLevel >= tier.min && reqLevel <= tier.max) {
-      const rawTier = getTier(flameValue, tier.values);
-      return rawTier >= 3 ? rawTier - 2 : 0;
+      const rawTier = getTier(flameValue, tier.values, 1);
+      return rawTier;
     }
   }
   return 0;
@@ -32,7 +32,7 @@ function getMainStatTier(reqLevel, flameValue) {
 function getAttackTier(base, flame, categoryTable) {
   const tierValues = categoryTable[base];
   if (!tierValues) return 0;
-  return getTier(flame, tierValues);
+  return getTier(flame, tierValues, 3);
 }
 
 function findItemCategory(baseValue) {
@@ -90,7 +90,7 @@ function analyzeItem(text) {
     const nums = valuesMatch ? valuesMatch[1].split('+').map(n => parseInt(n.trim())) : [];
     const lc = line.toLowerCase();
 
-    if (mainStat && lc.startsWith(mainStat.toLowerCase())) {
+    if (mainStat && lc.startsWith(mainStat.toLowerCase() + ':')) {
       if (starforced && nums.length === 3) mainStatValue = nums[1];
       else if (nums.length === 2) mainStatValue = nums[1];
     }
@@ -103,14 +103,16 @@ function analyzeItem(text) {
       else if (nums.length === 2) [baseMatt, mattValue] = [nums[0], nums[1]];
     }
     if (lc.includes('boss')) {
-      const boss = line.match(/\+?\d+%/g);
-      if (boss && boss.length >= 2) bossValue = parseInt(boss[1]);
-      else if (boss && boss.length === 1) bossValue = parseInt(boss[0]);
+      const match = line.match(/\(([^)]+)\)/);
+      const values = match ? match[1].split('+').map(s => parseInt(s.replace('%', '').trim())) : [];
+      if (values.length >= 2) bossValue = values[1];
+      else if (values.length === 1) bossValue = values[0];
     }
     if (lc.includes('all')) {
-      const all = line.match(/\+?\d+%/g);
-      if (all && all.length >= 2) allStatValue = parseInt(all[1]);
-      else if (all && all.length === 1) allStatValue = parseInt(all[0]);
+      const match = line.match(/\(([^)]+)\)/);
+      const values = match ? match[1].split('+').map(s => parseInt(s.replace('%', '').trim())) : [];
+      if (values.length >= 2) allStatValue = values[1];
+      else if (values.length === 1) allStatValue = values[0];
     }
   }
 
@@ -120,8 +122,8 @@ function analyzeItem(text) {
   logger.log(`🏷️ Item Category (from base value): ${itemCategory || 'Unknown'}`);
 
   const mainStatTier = getMainStatTier(reqLevel, mainStatValue);
-  const bossTier = getTier(bossValue, BOSS_TIERS);
-  const allStatTier = getTier(allStatValue, ALL_STAT_TIERS);
+  const bossTier = getTier(bossValue, BOSS_TIERS, 1);
+  const allStatTier = getTier(allStatValue, ALL_STAT_TIERS, 1);
 
   let attTier = '-';
   let mattTier = '-';

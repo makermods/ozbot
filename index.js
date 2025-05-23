@@ -12,7 +12,7 @@ const client = new Client({
   ]
 });
 
-const CHANNEL_ID = process.env.CHANNEL_ID_SCAN;
+const CHANNEL_ID = process.env.CHANNEL_ID;
 
 client.once(Events.ClientReady, () => {
   logger.log(`🟢 Bot ready: ${client.user.tag}`);

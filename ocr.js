@@ -1,32 +1,49 @@
-// ocr.js
 const Tesseract = require('tesseract.js');
 const Jimp = require('jimp');
+const axios = require('axios');
+const fs = require('fs');
+const path = require('path');
 const logger = require('./logger');
 
-async function processImage(imageUrl) {
-  logger.log(`🔍 Processing image: ${imageUrl}`);
+const TEMP_IMAGE_PATH = path.join(__dirname, 'temp_image.png');
 
-  const image = await Jimp.read(imageUrl);
+async function downloadImage(url, outputPath) {
+  const response = await axios({ url, responseType: 'arraybuffer' });
+  fs.writeFileSync(outputPath, response.data);
+}
 
-  // Preprocess the image to improve OCR accuracy
+async function preprocessImage(inputPath) {
+  const image = await Jimp.read(inputPath);
   image
-    .greyscale()
-    .contrast(1)
-    .normalize()
-    .resize(image.bitmap.width * 2, image.bitmap.height * 2);
+    .resize(800, Jimp.AUTO)         // Resize for consistency
+    .grayscale()                    // Convert to grayscale
+    .contrast(0.5)                  // Enhance contrast
+    .normalize()                    // Normalize light/dark areas
+    .write(inputPath);             // Overwrite input
+}
 
-  const buffer = await image.getBufferAsync(Jimp.MIME_PNG);
+async function processImage(imageUrl) {
+  try {
+    logger.log(`⬇️ Downloading image: ${imageUrl}`);
+    await downloadImage(imageUrl, TEMP_IMAGE_PATH);
 
-  const result = await Tesseract.recognize(buffer, 'eng', {
-    logger: m => logger.log(`🔠 OCR Engine: ${m.status} - ${m.progress}`),
-    tessedit_char_whitelist: '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ+%():.- ',
-    preserve_interword_spaces: 1
-  });
+    logger.log(`🧪 Preprocessing image`);
+    await preprocessImage(TEMP_IMAGE_PATH);
 
-  const text = result.data.text;
-  logger.log(`🧾 OCR Text:\n${text}`);
-  return text;
+    logger.log(`🔍 Performing OCR`);
+    const { data: { text } } = await Tesseract.recognize(TEMP_IMAGE_PATH, 'eng', {
+      logger: m => logger.log(`[Tesseract] ${m.status}`)
+    });
+
+    logger.log(`🧾 OCR Text:\n${text}`);
+    return text;
+  } catch (error) {
+    logger.log(`❌ OCR error: ${error.message}`);
+    throw error;
+  } finally {
+    // Clean up temp file
+    if (fs.existsSync(TEMP_IMAGE_PATH)) fs.unlinkSync(TEMP_IMAGE_PATH);
+  }
 }
 
 module.exports = { processImage };
-
